@@ -1,0 +1,29 @@
+[package]
+name = "dockerctl"
+version = "0.1.0"
+edition = "2024"
+description = "Fast project-first Docker TUI/CLI for Linux daily operations"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/badwichell007/dockerctl"
+homepage = "https://github.com/badwichell007/dockerctl"
+documentation = "https://github.com/badwichell007/dockerctl#readme"
+keywords = ["docker", "tui", "cli", "linux", "ops"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+bollard = "0.20"
+clap = { version = "4.5", features = ["derive", "env"] }
+clap_complete = "4.5"
+crossterm = "0.28"
+futures-util = "0.3"
+ratatui = "0.30"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+toml = "0.8"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
