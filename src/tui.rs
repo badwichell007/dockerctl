@@ -26,6 +26,7 @@ use crate::config::{parse_theme, ThemeName};
 use crate::docker::DockerClient;
 use crate::domain::{Container, ContainerState, DockerSnapshot, OperationAction, Project, SortMode};
 use crate::health::{analyze_snapshot, global_findings};
+use crate::inbox::{build_ops_inbox, InboxItem, InboxSeverity};
 use crate::ops::{OperationPlan, OperationPlanner};
 use crate::resources::{format_bytes, ResourcePanelData, ResourceRow};
 use crate::{msg, AppResult};
@@ -91,6 +92,7 @@ impl Drop for TerminalSession {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TuiPanel {
+    Inbox,
     Detail,
     Doctor,
     Logs,
@@ -215,7 +217,7 @@ impl DashboardState {
             running_only: false,
             sort_mode,
             theme: ThemeName::Industrial,
-            panel: TuiPanel::Detail,
+            panel: TuiPanel::Inbox,
             status: String::new(),
             context_menu: None,
             execution_prompt: None,
@@ -708,7 +710,7 @@ impl TuiApp {
             running_only: false,
             sort_mode: SortMode::Severity,
             theme,
-            panel: TuiPanel::Detail,
+            panel: TuiPanel::Inbox,
             status: String::new(),
             context_menu: None,
             execution_prompt: None,
@@ -905,6 +907,10 @@ impl TuiApp {
             KeyCode::Char('5') => {
                 self.context_menu = None;
                 self.panel = TuiPanel::Plan(OperationAction::Purge);
+            }
+            KeyCode::Char('b') => {
+                self.context_menu = None;
+                self.panel = TuiPanel::Inbox;
             }
             KeyCode::Char('d') => {
                 self.context_menu = None;
@@ -1582,6 +1588,10 @@ fn project_kind_label(project: &Project) -> &'static str {
 }
 
 fn render_ops_deck(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, state: &DashboardState) {
+    if state.panel == TuiPanel::Inbox {
+        render_inbox_panel(frame, area, state);
+        return;
+    }
     if state.panel == TuiPanel::Resources {
         render_resources_panel(frame, area, state);
         return;
@@ -1589,6 +1599,7 @@ fn render_ops_deck(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, stat
 
     let palette = theme_palette(state.theme);
     let title = match state.panel {
+        TuiPanel::Inbox => "Ops Deck / Inbox",
         TuiPanel::Detail => "Ops Deck / Detail",
         TuiPanel::Doctor => "Ops Deck / Doctor",
         TuiPanel::Logs => "Ops Deck / Logs",
@@ -1641,6 +1652,171 @@ fn render_ops_deck(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, stat
             ),
         area,
     );
+}
+
+fn render_inbox_panel(
+    frame: &mut ratatui::Frame,
+    area: ratatui::layout::Rect,
+    state: &DashboardState,
+) {
+    let palette = theme_palette(state.theme);
+    let inbox = build_ops_inbox(&state.snapshot, state.resource_data.as_ref());
+    let critical = inbox
+        .items
+        .iter()
+        .filter(|item| item.severity == InboxSeverity::Critical)
+        .count();
+    let warnings = inbox
+        .items
+        .iter()
+        .filter(|item| item.severity == InboxSeverity::Warning)
+        .count();
+    let categories = inbox_categories(&inbox.items);
+    let block = Block::default()
+        .title("Ops Deck / Ops Inbox")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(palette.accent))
+        .style(Style::default().bg(palette.surface));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(5), Constraint::Min(8), Constraint::Length(3)])
+        .split(inner);
+
+    let header = vec![
+        Line::from(vec![
+            Span::styled(
+                "Ops Inbox",
+                Style::default()
+                    .fg(palette.primary)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(" | Critical:{critical} Warning:{warnings}"),
+                Style::default().fg(palette.muted),
+            ),
+            Span::styled(" | b inbox", Style::default().fg(palette.warning)),
+        ]),
+        Line::from(Span::styled(
+            format!("Categories: {categories}"),
+            Style::default().fg(palette.muted),
+        )),
+        Line::from(Span::styled(
+            "Prioritized next actions from health, resources, and cleanup signals.",
+            Style::default().fg(palette.muted),
+        )),
+    ];
+    frame.render_widget(
+        Paragraph::new(header)
+            .style(Style::default().bg(palette.surface))
+            .block(
+                Block::default()
+                    .title("Signal Summary")
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(palette.primary))
+                    .style(Style::default().bg(palette.surface)),
+            ),
+        chunks[0],
+    );
+
+    let rows = inbox
+        .items
+        .iter()
+        .take(8)
+        .map(|item| inbox_row(item, palette));
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(8),
+            Constraint::Length(18),
+            Constraint::Length(18),
+            Constraint::Min(20),
+            Constraint::Length(34),
+        ],
+    )
+    .header(
+        Row::new(vec![
+            Cell::from("Level"),
+            Cell::from("Category"),
+            Cell::from("Project"),
+            Cell::from("Signal"),
+            Cell::from("Next Action"),
+        ])
+        .style(
+            Style::default()
+                .fg(palette.muted)
+                .add_modifier(Modifier::BOLD),
+        ),
+    )
+    .block(
+        Block::default()
+            .title("Action Queue")
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(palette.primary))
+            .style(Style::default().bg(palette.surface)),
+    );
+    frame.render_widget(table, chunks[1]);
+
+    frame.render_widget(
+        Paragraph::new("Enter plan panel to execute; Inbox only recommends safe preflight commands.")
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(palette.muted).bg(palette.surface))
+            .block(
+                Block::default()
+                    .title("Safety")
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(palette.muted))
+                    .style(Style::default().bg(palette.surface)),
+            ),
+        chunks[2],
+    );
+}
+
+fn inbox_categories(items: &[InboxItem]) -> String {
+    let mut categories = BTreeSet::new();
+    for item in items {
+        categories.insert(item.category.as_str());
+    }
+    categories.into_iter().collect::<Vec<_>>().join(", ")
+}
+
+fn inbox_row(item: &InboxItem, palette: ThemePalette) -> Row<'_> {
+    let color = inbox_severity_color(item.severity, palette);
+    Row::new(vec![
+        Cell::from(inbox_severity_label(item.severity)).style(
+            Style::default()
+                .fg(color)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from(item.category.clone()).style(Style::default().fg(color)),
+        Cell::from(item.project.as_deref().unwrap_or("global").to_string())
+            .style(Style::default().fg(palette.accent)),
+        Cell::from(item.title.clone()),
+        Cell::from(item.command.clone()).style(Style::default().fg(palette.warning)),
+    ])
+    .style(Style::default().bg(palette.surface))
+}
+
+fn inbox_severity_label(severity: InboxSeverity) -> &'static str {
+    match severity {
+        InboxSeverity::Critical => "CRIT",
+        InboxSeverity::Warning => "WARN",
+        InboxSeverity::Info => "INFO",
+    }
+}
+
+fn inbox_severity_color(severity: InboxSeverity, palette: ThemePalette) -> Color {
+    match severity {
+        InboxSeverity::Critical => palette.danger,
+        InboxSeverity::Warning => palette.warning,
+        InboxSeverity::Info => palette.primary,
+    }
 }
 
 fn text_lines(text: String) -> Vec<Line<'static>> {
@@ -2341,6 +2517,7 @@ fn dashboard_metrics(state: &DashboardState, palette: ThemePalette) -> Vec<Metri
 
 fn panel_text(state: &DashboardState) -> String {
     match state.panel {
+        TuiPanel::Inbox => inbox_text(state),
         TuiPanel::Detail => detail_text(state),
         TuiPanel::Doctor => doctor_text(&state.snapshot),
         TuiPanel::Logs => logs_text(state),
@@ -2351,6 +2528,22 @@ fn panel_text(state: &DashboardState) -> String {
             .unwrap_or_else(|err| err.to_string()),
         TuiPanel::Help => help_text(),
     }
+}
+
+fn inbox_text(state: &DashboardState) -> String {
+    let inbox = build_ops_inbox(&state.snapshot, state.resource_data.as_ref());
+    let mut text = String::from("Ops Inbox\n");
+    for item in inbox.items.iter().take(8) {
+        text.push_str(&format!(
+            "[{}] {} | {} | {}\n  {}\n",
+            inbox_severity_label(item.severity),
+            item.category,
+            item.project.as_deref().unwrap_or("global"),
+            item.title,
+            item.command
+        ));
+    }
+    text
 }
 
 fn detail_text(state: &DashboardState) -> String {
@@ -2464,7 +2657,7 @@ fn resources_text(state: &DashboardState) -> String {
          commands\n\
          dockerctl stats {target}\n\
          dockerctl stats {target} --json\n\n\
-         note: v0.2.1 samples only the selected project to keep the cockpit responsive.\n",
+         note: v0.2.2 samples only the selected project and feeds Ops Inbox signals.\n",
         project.name,
         project.containers.len(),
         project.active(),
@@ -2610,7 +2803,7 @@ fn help_text() -> String {
         "space: 多选；a: 全选/反选；c: 清空选择",
         "/: 输入过滤；Backspace 删除过滤字符",
         "x: 仅活动项目；o: 切换排序；r: 刷新",
-        "i: 详情；d: doctor；l: logs；m: resources",
+        "b: inbox；i: 详情；d: doctor；l: logs；m: resources",
         "1/2/3/4/5: start/stop/restart/remove/purge 预演",
         "Enter: 在计划面板打开执行确认；确认中再次 Enter 执行",
         "q/Esc: 退出；确认中 Esc 取消执行",

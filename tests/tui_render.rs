@@ -199,6 +199,27 @@ fn demo_dashboard_renders_mock_data_badge() {
 }
 
 #[test]
+fn ops_inbox_panel_renders_prioritized_next_actions() {
+    let mut state = demo_dashboard_state();
+    state.panel = TuiPanel::Inbox;
+
+    let backend = TestBackend::new(140, 40);
+    let mut terminal = Terminal::new(backend).expect("terminal");
+    terminal
+        .draw(|frame| render_dashboard(frame, &mut state))
+        .expect("draw");
+
+    let rendered = format!("{:?}", terminal.backend().buffer());
+
+    assert!(rendered.contains("Ops Inbox"));
+    assert!(rendered.contains("Critical"));
+    assert!(rendered.contains("Resource Pressure"));
+    assert!(rendered.contains("Next Action"));
+    assert!(rendered.contains("api-gateway"));
+    assert!(rendered.contains("dockerctl rescue"));
+}
+
+#[test]
 fn demo_execution_only_updates_status() {
     let mut state = demo_dashboard_state();
     state.panel = TuiPanel::Plan(OperationAction::Restart);

@@ -7,7 +7,7 @@
 面向 Linux 日常运维的高性能 Docker TUI/CLI。以项目为中心聚合 Compose、Stack 和 standalone 容器，提供资源监控、风险预演、安全执行、异常恢复、审计时间线和脚本化 JSON 输出。
 
 [![CI](https://github.com/badwichell007/dockerctl/actions/workflows/ci.yml/badge.svg)](https://github.com/badwichell007/dockerctl/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v0.2.1-0ea5e9)](https://github.com/badwichell007/dockerctl/releases)
+[![Release](https://img.shields.io/badge/release-v0.2.2-0ea5e9)](https://github.com/badwichell007/dockerctl/releases)
 [![Rust](https://img.shields.io/badge/Rust-2024-f97316)](https://www.rust-lang.org/)
 [![TUI](https://img.shields.io/badge/TUI-ratatui%20%2B%20crossterm-22c55e)](https://ratatui.rs/)
 [![Docker API](https://img.shields.io/badge/Docker%20API-bollard-2563eb)](https://github.com/fussybeaver/bollard)
@@ -87,6 +87,7 @@ select project -> inspect risk -> preview operation -> confirm safely -> audit r
 | 模块 | 能力 | 设计目标 |
 | --- | --- | --- |
 | Project View | 自动识别 Compose、Stack、Standalone | 以项目而不是单个容器作为日常操作单元 |
+| Ops Inbox | 汇总 Critical、Resource Pressure、Cleanup、Next Action | 打开 TUI 后直接知道最该处理什么 |
 | TUI Command Center | 键盘、鼠标、右键菜单、多选、过滤、排序 | 保持终端速度，同时降低误操作成本 |
 | Resource Monitor | 当前项目级 CPU/MEM/NET/IO 实时采样 | 只在进入资源视图时采样，避免全局轮询拖慢 TUI |
 | Operation Plan | start/stop/restart/remove/purge/prune 风险预演 | 所有修改动作先生成计划，再执行 |
@@ -119,7 +120,7 @@ export PATH="$HOME/.local/bin:$PATH"
 ### 指定版本
 
 ```bash
-DOCKERCTL_VERSION=v0.2.1 curl -fsSL https://raw.githubusercontent.com/badwichell007/dockerctl/main/scripts/install.sh | bash
+DOCKERCTL_VERSION=v0.2.2 curl -fsSL https://raw.githubusercontent.com/badwichell007/dockerctl/main/scripts/install.sh | bash
 ```
 
 ### 源码安装
@@ -262,8 +263,21 @@ TUI 采用 Ops Cockpit 布局：
 | Header | 当前运行模式、排序方式、过滤条件、选中数量、LIVE/DEMO 状态 |
 | KPI Strip | 项目总数、活动项目、风险项目、已选项目、当前可见项目 |
 | Projects / Risk Radar | 项目列表，强化 State、Risk、Active、Ports 和选择状态 |
-| Ops Deck | 详情、诊断、日志入口、资源监视、风险预演、恢复预案 |
+| Ops Deck | Ops Inbox、详情、诊断、日志入口、资源监视、风险预演、恢复预案 |
 | Command Bar / Fast Ops | 当前状态、快捷键和执行提示 |
+
+### Ops Inbox
+
+TUI 默认打开 `Ops Inbox`。它会把当前快照中的运维信号整理成待处理队列：
+
+| 类别 | 说明 |
+| --- | --- |
+| Critical | unhealthy、restarting、paused 等项目状态风险 |
+| Resource Pressure | 当前资源采样中的高 CPU、高内存和 stats error |
+| Cleanup | stopped containers 等可先 dry-run 的清理机会 |
+| Next Action | 推荐下一条安全命令，例如 `dockerctl rescue <project> --dry-run` |
+
+Inbox 只提供建议和安全预演命令，不直接执行修改操作。按 `b` 可随时回到 Inbox。
 
 ### 鼠标操作
 
@@ -304,6 +318,7 @@ Backspace     删除过滤字符
 x             仅显示活动项目
 o             切换排序
 r             刷新快照
+b             inbox 面板
 i             详情面板
 d             doctor 面板
 l             logs 面板
@@ -702,6 +717,14 @@ OperationAction -> OperationPlan -> Confirmation -> Executor -> Audit
 - 优先做好本地 Docker 运维，不把项目扩张成复杂平台。
 
 ## 更新日志
+
+### v0.2.2
+
+- 新增 Ops Inbox：默认面板直接汇总 Critical、Resource Pressure、Cleanup 和 Next Action。
+- 新增独立 `inbox` 模型：从 Docker snapshot 和当前资源采样生成可测试的待处理队列。
+- Demo 模式展示完整 Inbox 效果，包含 unhealthy、restarting、高 CPU、高内存、stats error 和 safe-prune 建议。
+- TUI 新增 `b` 快捷键，用户可以从任意面板快速回到 Inbox。
+- README 增加 Ops Inbox 教程，强调“打开就知道下一步该处理什么”。
 
 ### v0.2.1
 

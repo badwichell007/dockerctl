@@ -4,6 +4,7 @@ pub mod config;
 pub mod docker;
 pub mod domain;
 pub mod health;
+pub mod inbox;
 pub mod ops;
 pub mod output;
 pub mod resources;
