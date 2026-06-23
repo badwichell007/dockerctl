@@ -1,0 +1,41 @@
+name: Sync Release Notes
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/release-notes/**"
+      - ".github/workflows/sync-release-notes.yml"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to sync"
+        required: true
+        default: "v0.2.2"
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || 'v0.2.2' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync notes to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes_file=".github/release-notes/${TAG_NAME}.md"
+          if [ ! -f "$notes_file" ]; then
+            echo "Release notes file not found: $notes_file" >&2
+            exit 1
+          fi
+
+          gh release edit "$TAG_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$TAG_NAME" \
+            --notes-file "$notes_file"
