@@ -1,6 +1,6 @@
 use dockerctl::resources::{
-    cpu_percent, format_bytes, format_signed_bytes, resource_pressure_hint, resource_trend,
-    sorted_resource_rows, ResourcePanelData, ResourceRow, ResourceSummary,
+    ResourcePanelData, ResourceRow, ResourceSummary, cpu_percent, format_bytes,
+    format_signed_bytes, resource_pressure_hint, resource_trend, sorted_resource_rows,
 };
 
 #[test]
@@ -68,7 +68,10 @@ fn resource_rows_sort_pressure_first_and_emit_hotspot_hint() {
 
     assert_eq!(sorted[0].container_name, "err_1");
     assert_eq!(sorted[1].container_name, "cpu_1");
-    assert_eq!(resource_pressure_hint(&rows).as_deref(), Some("err_1 stats error: stats timeout"));
+    assert_eq!(
+        resource_pressure_hint(&rows).as_deref(),
+        Some("err_1 stats error: stats timeout")
+    );
 }
 
 #[test]
@@ -76,12 +79,16 @@ fn resource_trend_compares_adjacent_project_samples() {
     let previous = ResourcePanelData::sampled(
         "mingli",
         1_000,
-        vec![ResourceRow::ok("web", "web_1", "UP", 10.0, 100, 1_000, 100, 200, 300, 400)],
+        vec![ResourceRow::ok(
+            "web", "web_1", "UP", 10.0, 100, 1_000, 100, 200, 300, 400,
+        )],
     );
     let current = ResourcePanelData::sampled(
         "mingli",
         2_000,
-        vec![ResourceRow::ok("web", "web_1", "UP", 18.5, 180, 1_000, 140, 260, 360, 520)],
+        vec![ResourceRow::ok(
+            "web", "web_1", "UP", 18.5, 180, 1_000, 140, 260, 360, 520,
+        )],
     );
 
     let trend = resource_trend(&previous, &current).expect("trend");

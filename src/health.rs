@@ -30,7 +30,11 @@ pub fn analyze_snapshot(snapshot: &DockerSnapshot) -> Vec<ProjectHealth> {
             if has_duplicate_ports(&project.ports) {
                 findings.push("检测到项目内端口重复映射".to_string());
             }
-            for port in project.ports.iter().filter(|port| port.starts_with("0.0.0.0:")) {
+            for port in project
+                .ports
+                .iter()
+                .filter(|port| port.starts_with("0.0.0.0:"))
+            {
                 findings.push(format!("公网监听端口暴露: {port}"));
             }
             for container in &project.containers {
@@ -86,7 +90,10 @@ pub fn global_findings(snapshot: &DockerSnapshot) -> Vec<String> {
         }
         for port in &project.ports {
             if let Some(host_port) = host_port_key(port) {
-                ports.entry(host_port).or_default().insert(project.name.clone());
+                ports
+                    .entry(host_port)
+                    .or_default()
+                    .insert(project.name.clone());
             }
         }
     }

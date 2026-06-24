@@ -8,10 +8,11 @@ use crossterm::event::{
 };
 use crossterm::execute;
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, size as terminal_size, EnterAlternateScreen,
-    LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+    size as terminal_size,
 };
 use futures_util::FutureExt;
+use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -19,20 +20,19 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{
     Block, BorderType, Borders, Cell, Clear, ListState, Paragraph, Row, Table, TableState, Wrap,
 };
-use ratatui::Terminal;
 use tokio::task::JoinHandle;
 
-use crate::config::{parse_theme, ThemeName};
+use crate::config::{ThemeName, parse_theme};
 use crate::docker::DockerClient;
 use crate::domain::{DockerSnapshot, OperationAction, Project, SortMode};
 use crate::health::{analyze_snapshot, global_findings};
-use crate::inbox::{build_ops_inbox, InboxItem, InboxSeverity};
+use crate::inbox::{InboxItem, InboxSeverity, build_ops_inbox};
 use crate::ops::{OperationPlan, OperationPlanner};
 use crate::resources::{
-    format_bytes, format_signed_bytes, resource_pressure_hint, resource_trend,
-    sorted_resource_rows, ResourcePanelData, ResourceRow, ResourceTrend,
+    ResourcePanelData, ResourceRow, ResourceTrend, format_bytes, format_signed_bytes,
+    resource_pressure_hint, resource_trend, sorted_resource_rows,
 };
-use crate::{msg, AppResult};
+use crate::{AppResult, msg};
 
 const HEADER_ROWS: u16 = 3;
 const METRIC_ROWS: u16 = 5;
@@ -243,7 +243,8 @@ impl DashboardState {
         } else if self.table_state.selected().is_none() {
             self.table_state.select(Some(0));
         } else if let Some(index) = self.table_state.selected() {
-            self.table_state.select(Some(index.min(self.filtered.len() - 1)));
+            self.table_state
+                .select(Some(index.min(self.filtered.len() - 1)));
         }
     }
 
@@ -781,9 +782,9 @@ impl TuiApp {
         self.rebuild_filtered();
         if self.panel == TuiPanel::Resources {
             let project = self.current_project().map(|project| project.name.clone());
-            self.resource_data = project
-                .as_deref()
-                .and_then(|project| mark_resource_refresh_pending(self.resource_data.take(), project));
+            self.resource_data = project.as_deref().and_then(|project| {
+                mark_resource_refresh_pending(self.resource_data.take(), project)
+            });
             self.last_resource_refresh = None;
         }
         Ok(())
@@ -804,7 +805,8 @@ impl TuiApp {
         } else if self.list_state.selected().is_none() {
             self.list_state.select(Some(0));
         } else if let Some(index) = self.list_state.selected() {
-            self.list_state.select(Some(index.min(self.filtered.len() - 1)));
+            self.list_state
+                .select(Some(index.min(self.filtered.len() - 1)));
         }
     }
 
@@ -848,7 +850,11 @@ impl TuiApp {
         {
             self.selected.clear();
         } else {
-            self.selected = self.filtered.iter().map(|project| project.name.clone()).collect();
+            self.selected = self
+                .filtered
+                .iter()
+                .map(|project| project.name.clone())
+                .collect();
         }
     }
 
@@ -868,7 +874,8 @@ impl TuiApp {
             return;
         }
         self.log_container_index = if delta.is_negative() {
-            self.log_container_index.saturating_sub(delta.unsigned_abs())
+            self.log_container_index
+                .saturating_sub(delta.unsigned_abs())
         } else {
             (self.log_container_index + delta as usize).min(len - 1)
         };
@@ -940,7 +947,12 @@ impl TuiApp {
                 self.resource_data = Some(ResourcePanelData::sampled(
                     project,
                     crate::audit::now_unix_millis(),
-                    vec![ResourceRow::error("task", "resource sampler", "ERR", err.to_string())],
+                    vec![ResourceRow::error(
+                        "task",
+                        "resource sampler",
+                        "ERR",
+                        err.to_string(),
+                    )],
                 ));
             }
             None => {}
@@ -1190,7 +1202,11 @@ fn theme_palette(theme: ThemeName) -> ThemePalette {
     }
 }
 
-fn render_metric_bar(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, state: &DashboardState) {
+fn render_metric_bar(
+    frame: &mut ratatui::Frame,
+    area: ratatui::layout::Rect,
+    state: &DashboardState,
+) {
     let palette = theme_palette(state.theme);
     let metrics = dashboard_metrics(state, palette);
     let chunks = Layout::default()
@@ -1221,20 +1237,22 @@ fn render_metric_bar(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, st
                     .fg(metric.color)
                     .add_modifier(Modifier::BOLD),
             )),
-            Line::from(Span::styled(metric.hint, Style::default().fg(palette.muted))),
+            Line::from(Span::styled(
+                metric.hint,
+                Style::default().fg(palette.muted),
+            )),
         ];
         frame.render_widget(
-            Paragraph::new(text).alignment(Alignment::Center).style(
-                Style::default()
-                    .fg(metric.color)
-                    .bg(palette.surface),
-            ).block(
-                Block::default()
-                    .title(metric.label)
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(metric.color)),
-            ),
+            Paragraph::new(text)
+                .alignment(Alignment::Center)
+                .style(Style::default().fg(metric.color).bg(palette.surface))
+                .block(
+                    Block::default()
+                        .title(metric.label)
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
+                        .border_style(Style::default().fg(metric.color)),
+                ),
             chunks[index],
         );
     }
@@ -1295,11 +1313,7 @@ fn render_projects_table(
             Cell::from(format!("{}/{}", project.active(), project.containers.len()))
                 .style(Style::default().fg(palette.accent)),
             Cell::from(project.ports.len().to_string()).style(Style::default().fg(palette.muted)),
-            Cell::from(risk.0).style(
-                Style::default()
-                    .fg(risk.1)
-                    .add_modifier(Modifier::BOLD),
-            ),
+            Cell::from(risk.0).style(Style::default().fg(risk.1).add_modifier(Modifier::BOLD)),
         ])
         .style(row_style)
     });
@@ -1348,7 +1362,11 @@ fn project_kind_label(project: &Project) -> &'static str {
     }
 }
 
-fn render_ops_deck(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, state: &DashboardState) {
+fn render_ops_deck(
+    frame: &mut ratatui::Frame,
+    area: ratatui::layout::Rect,
+    state: &DashboardState,
+) {
     if state.panel == TuiPanel::Inbox {
         render_inbox_panel(frame, area, state);
         return;
@@ -1448,7 +1466,11 @@ fn render_inbox_panel(
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(5), Constraint::Min(8), Constraint::Length(3)])
+        .constraints([
+            Constraint::Length(5),
+            Constraint::Min(8),
+            Constraint::Length(3),
+        ])
         .split(inner);
 
     let header = vec![
@@ -1528,17 +1550,19 @@ fn render_inbox_panel(
     frame.render_widget(table, chunks[1]);
 
     frame.render_widget(
-        Paragraph::new("Enter plan panel to execute; Inbox only recommends safe preflight commands.")
-            .alignment(Alignment::Center)
-            .style(Style::default().fg(palette.muted).bg(palette.surface))
-            .block(
-                Block::default()
-                    .title("Safety")
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(palette.muted))
-                    .style(Style::default().bg(palette.surface)),
-            ),
+        Paragraph::new(
+            "Enter plan panel to execute; Inbox only recommends safe preflight commands.",
+        )
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(palette.muted).bg(palette.surface))
+        .block(
+            Block::default()
+                .title("Safety")
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(palette.muted))
+                .style(Style::default().bg(palette.surface)),
+        ),
         chunks[2],
     );
 }
@@ -1554,11 +1578,8 @@ fn inbox_categories(items: &[InboxItem]) -> String {
 fn inbox_row(item: &InboxItem, palette: ThemePalette) -> Row<'_> {
     let color = inbox_severity_color(item.severity, palette);
     Row::new(vec![
-        Cell::from(inbox_severity_label(item.severity)).style(
-            Style::default()
-                .fg(color)
-                .add_modifier(Modifier::BOLD),
-        ),
+        Cell::from(inbox_severity_label(item.severity))
+            .style(Style::default().fg(color).add_modifier(Modifier::BOLD)),
         Cell::from(item.category.clone()).style(Style::default().fg(color)),
         Cell::from(item.project.as_deref().unwrap_or("global").to_string())
             .style(Style::default().fg(palette.accent)),
@@ -1623,7 +1644,9 @@ fn render_logs_panel(
         return;
     };
     let filter = log_filter_label(state);
-    let selected_index = state.log_container_index.min(project.containers.len().saturating_sub(1));
+    let selected_index = state
+        .log_container_index
+        .min(project.containers.len().saturating_sub(1));
     let selected_number = if project.containers.is_empty() {
         0
     } else {
@@ -1642,22 +1665,42 @@ fn render_logs_panel(
                     .fg(palette.primary)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!(" | project {}", project.name), Style::default().fg(palette.muted)),
             Span::styled(
-                format!(" | container {}/{}", selected_number, project.containers.len()),
+                format!(" | project {}", project.name),
+                Style::default().fg(palette.muted),
+            ),
+            Span::styled(
+                format!(
+                    " | container {}/{}",
+                    selected_number,
+                    project.containers.len()
+                ),
                 Style::default().fg(palette.warning),
             ),
         ]),
         Line::from(vec![
             Span::styled("Keyword Filter: ", Style::default().fg(palette.muted)),
             Span::styled(filter.clone(), Style::default().fg(palette.primary)),
-            Span::styled(" | n/p switch container", Style::default().fg(palette.muted)),
+            Span::styled(
+                " | n/p switch container",
+                Style::default().fg(palette.muted),
+            ),
         ]),
         Line::from(vec![
             Span::styled("Highlight: ", Style::default().fg(palette.muted)),
-            Span::styled("ERROR", Style::default().fg(palette.danger).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "ERROR",
+                Style::default()
+                    .fg(palette.danger)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" / "),
-            Span::styled("WARN", Style::default().fg(palette.warning).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "WARN",
+                Style::default()
+                    .fg(palette.warning)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
     ];
     frame.render_widget(
@@ -1691,7 +1734,8 @@ fn render_logs_panel(
                 } else {
                     Style::default().fg(palette.primary)
                 }),
-                Cell::from(container.status.clone()).style(log_status_style(&container.status, palette)),
+                Cell::from(container.status.clone())
+                    .style(log_status_style(&container.status, palette)),
             ])
             .style(if selected {
                 Style::default().bg(palette.selection)
@@ -1851,10 +1895,42 @@ fn render_resource_summary(
         .split(chunks[1]);
 
     let Some(data) = state.resource_data.as_ref().filter(|data| !data.loading) else {
-        render_resource_card(frame, cards[0], "CPU", "--", "waiting", palette.muted, palette);
-        render_resource_card(frame, cards[1], "MEM", "--", "waiting", palette.muted, palette);
-        render_resource_card(frame, cards[2], "NET", "--", "rx / tx", palette.muted, palette);
-        render_resource_card(frame, cards[3], "IO", "--", "read / write", palette.muted, palette);
+        render_resource_card(
+            frame,
+            cards[0],
+            "CPU",
+            "--",
+            "waiting",
+            palette.muted,
+            palette,
+        );
+        render_resource_card(
+            frame,
+            cards[1],
+            "MEM",
+            "--",
+            "waiting",
+            palette.muted,
+            palette,
+        );
+        render_resource_card(
+            frame,
+            cards[2],
+            "NET",
+            "--",
+            "rx / tx",
+            palette.muted,
+            palette,
+        );
+        render_resource_card(
+            frame,
+            cards[3],
+            "IO",
+            "--",
+            "read / write",
+            palette.muted,
+            palette,
+        );
         return;
     };
     let trend = state.resource_trend.as_ref();
@@ -2046,13 +2122,13 @@ fn render_resource_card(
             .alignment(Alignment::Center)
             .style(Style::default().bg(palette.surface))
             .block(
-            Block::default()
-                .title(title)
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(color))
-                .style(Style::default().bg(palette.surface)),
-        ),
+                Block::default()
+                    .title(title)
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(color))
+                    .style(Style::default().bg(palette.surface)),
+            ),
         area,
     );
 }
@@ -2068,13 +2144,13 @@ fn render_resource_table(
             Paragraph::new("sampling...\nNo resource rows yet.")
                 .style(Style::default().bg(palette.surface))
                 .block(
-                Block::default()
-                    .title("Containers / Resource Rows")
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(palette.primary))
-                    .style(Style::default().bg(palette.surface)),
-            ),
+                    Block::default()
+                        .title("Containers / Resource Rows")
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
+                        .border_style(Style::default().fg(palette.primary))
+                        .style(Style::default().bg(palette.surface)),
+                ),
             area,
         );
         return;
@@ -2085,13 +2161,13 @@ fn render_resource_table(
             Paragraph::new("No active containers in current project.")
                 .style(Style::default().fg(palette.muted).bg(palette.surface))
                 .block(
-                Block::default()
-                    .title("Containers / Resource Rows")
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(palette.primary))
-                    .style(Style::default().bg(palette.surface)),
-            ),
+                    Block::default()
+                        .title("Containers / Resource Rows")
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
+                        .border_style(Style::default().fg(palette.primary))
+                        .style(Style::default().bg(palette.surface)),
+                ),
             area,
         );
         return;
@@ -2521,7 +2597,11 @@ fn dashboard_metrics(state: &DashboardState, palette: ThemePalette) -> Vec<Metri
         MetricTile {
             label: "Visible",
             value: state.filtered.len().to_string(),
-            hint: if state.running_only { "active filter" } else { "all projects" },
+            hint: if state.running_only {
+                "active filter"
+            } else {
+                "all projects"
+            },
             color: if state.running_only {
                 palette.accent
             } else {
@@ -2750,7 +2830,7 @@ fn format_plan(plan: OperationPlan, prompt: Option<&ExecutionPrompt>) -> String 
 fn format_rescue_playbook(plan: &OperationPlan) -> String {
     let target = plan.projects.join(" ");
     format!(
-         "\nRecovery Playbook\n\
+        "\nRecovery Playbook\n\
          异常信号: 优先处理 unhealthy / restarting / active 容器。\n\
          执行策略: 先生成恢复重启预案，TUI 中需二次确认后才执行。\n\
          验证命令: dockerctl rescue {target} --dry-run\n\

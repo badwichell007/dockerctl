@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use crate::domain::{DockerSnapshot, OperationAction, Project, ProjectKind};
-use crate::{msg, AppResult};
+use crate::{AppResult, msg};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperationPlan {
@@ -40,7 +40,11 @@ impl<'a> OperationPlanner<'a> {
         Self { snapshot }
     }
 
-    pub fn plan(&self, action: OperationAction, project_names: &[String]) -> AppResult<OperationPlan> {
+    pub fn plan(
+        &self,
+        action: OperationAction,
+        project_names: &[String],
+    ) -> AppResult<OperationPlan> {
         if project_names.is_empty() && action != OperationAction::Prune {
             return msg("请至少选择一个项目。");
         }
@@ -69,7 +73,10 @@ impl<'a> OperationPlanner<'a> {
                 "safe-prune executes stopped containers, unused networks, and dangling images only; volumes are excluded."
                     .to_string(),
             );
-            warnings.push("执行前请确认没有依赖 stopped containers 或 dangling images 的离线调试流程。".to_string());
+            warnings.push(
+                "执行前请确认没有依赖 stopped containers 或 dangling images 的离线调试流程。"
+                    .to_string(),
+            );
         }
 
         let project_names = projects
@@ -131,7 +138,10 @@ fn collect_project_resources(
             }
             if action == OperationAction::Rescue {
                 if project.unhealthy == 0 && project.restarting == 0 {
-                    warnings.push(format!("项目 {} 没有明显异常，rescue 将按 restart 处理。", project.name));
+                    warnings.push(format!(
+                        "项目 {} 没有明显异常，rescue 将按 restart 处理。",
+                        project.name
+                    ));
                 } else {
                     let mut signals = Vec::new();
                     if project.unhealthy > 0 {
@@ -140,7 +150,11 @@ fn collect_project_resources(
                     if project.restarting > 0 {
                         signals.push(format!("{} restarting", project.restarting));
                     }
-                    warnings.push(format!("项目 {} 异常信号: {}", project.name, signals.join(", ")));
+                    warnings.push(format!(
+                        "项目 {} 异常信号: {}",
+                        project.name,
+                        signals.join(", ")
+                    ));
                 }
             }
         }

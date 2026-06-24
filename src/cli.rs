@@ -3,21 +3,25 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
-use clap_complete::{generate, Shell};
+use clap_complete::{Shell, generate};
 
 use crate::config::{config_path, load_config, timeline_log_path, write_default_config};
-use crate::docker::{docker_cli_available, DockerClient};
+use crate::docker::{DockerClient, docker_cli_available};
 use crate::domain::{OperationAction, SortMode};
-use crate::health::{analyze_snapshot, global_findings, HealthReport};
+use crate::health::{HealthReport, analyze_snapshot, global_findings};
 use crate::inbox::build_ops_inbox;
 use crate::ops::OperationPlanner;
 use crate::output::{print_json, print_projects};
 use crate::recipes::builtin_recipes;
 use crate::tui;
-use crate::{msg, AppResult};
+use crate::{AppResult, msg};
 
 #[derive(Debug, Parser)]
-#[command(name = "dockerctl", version, about = "Linux 日常 Docker 项目管理 TUI/CLI")]
+#[command(
+    name = "dockerctl",
+    version,
+    about = "Linux 日常 Docker 项目管理 TUI/CLI"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -260,7 +264,12 @@ pub async fn run() -> AppResult<()> {
             } else {
                 print_projects(std::slice::from_ref(project));
                 for container in &project.containers {
-                    println!("  - {} [{}] {}", container.name, container.state.state_code(), container.image);
+                    println!(
+                        "  - {} [{}] {}",
+                        container.name,
+                        container.state.state_code(),
+                        container.image
+                    );
                 }
                 Ok(())
             }
@@ -332,7 +341,10 @@ pub async fn run() -> AppResult<()> {
                 return msg("无法确定配置路径。");
             };
             if path.exists() && !force {
-                return msg(format!("配置已存在: {}。使用 --force 覆盖。", path.display()));
+                return msg(format!(
+                    "配置已存在: {}。使用 --force 覆盖。",
+                    path.display()
+                ));
             }
             write_default_config(&path)?;
             println!("已写入配置: {}", path.display());
@@ -349,10 +361,7 @@ fn recipes_command(json: bool) -> AppResult<()> {
         for recipe in recipes {
             println!(
                 "{} [{}]\n  {}\n  {}\n",
-                recipe.name,
-                recipe.risk,
-                recipe.description,
-                recipe.command
+                recipe.name, recipe.risk, recipe.description, recipe.command
             );
         }
         Ok(())
@@ -470,7 +479,10 @@ async fn health_command(config: crate::config::AppConfig, json: bool) -> AppResu
     let client = DockerClient::connect(config)?;
     let docker_daemon = client.ping().await.is_ok();
     let snapshot = if docker_daemon {
-        client.snapshot().await.unwrap_or_else(|_| crate::domain::DockerSnapshot::empty())
+        client
+            .snapshot()
+            .await
+            .unwrap_or_else(|_| crate::domain::DockerSnapshot::empty())
     } else {
         crate::domain::DockerSnapshot::empty()
     };
@@ -483,8 +495,14 @@ async fn health_command(config: crate::config::AppConfig, json: bool) -> AppResu
     if json {
         print_json(&report)
     } else {
-        println!("docker CLI: {}", if report.docker_cli { "OK" } else { "FAIL" });
-        println!("docker daemon: {}", if report.docker_daemon { "OK" } else { "FAIL" });
+        println!(
+            "docker CLI: {}",
+            if report.docker_cli { "OK" } else { "FAIL" }
+        );
+        println!(
+            "docker daemon: {}",
+            if report.docker_daemon { "OK" } else { "FAIL" }
+        );
         for finding in report.findings {
             println!("全局: {finding}");
         }
@@ -699,8 +717,7 @@ mod tests {
     fn matching_confirm_token_allows_scripted_purge() {
         let plan = plan(OperationAction::Purge, Some("DELETE-myapp"));
 
-        let decision =
-            confirmation_decision(&plan, false, Some("DELETE-myapp")).expect("decision");
+        let decision = confirmation_decision(&plan, false, Some("DELETE-myapp")).expect("decision");
 
         assert_eq!(decision, ConfirmationDecision::Execute);
     }

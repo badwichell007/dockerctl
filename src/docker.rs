@@ -3,20 +3,21 @@ use std::process::Command;
 
 use bollard::Docker;
 use bollard::query_parameters::{
-    EventsOptionsBuilder, ListContainersOptionsBuilder, ListImagesOptionsBuilder, LogsOptionsBuilder,
-    PruneImagesOptionsBuilder, RemoveContainerOptionsBuilder, RestartContainerOptionsBuilder,
-    StartContainerOptions, StatsOptionsBuilder, StopContainerOptionsBuilder,
+    EventsOptionsBuilder, ListContainersOptionsBuilder, ListImagesOptionsBuilder,
+    LogsOptionsBuilder, PruneImagesOptionsBuilder, RemoveContainerOptionsBuilder,
+    RestartContainerOptionsBuilder, StartContainerOptions, StatsOptionsBuilder,
+    StopContainerOptionsBuilder,
 };
-use futures_util::future::join_all;
 use futures_util::TryStreamExt;
+use futures_util::future::join_all;
 
-use crate::audit::{now_unix_millis, write_audit, AuditEntry};
+use crate::audit::{AuditEntry, now_unix_millis, write_audit};
 use crate::config::AppConfig;
 use crate::domain::{Container, ContainerState, DockerSnapshot, OperationAction, Project};
 use crate::ops::{OperationFailure, OperationPlan, OperationResult};
-use crate::resources::{cpu_percent, ResourcePanelData, ResourceRow};
-use crate::telemetry::{write_timeline, TimelineEvent};
-use crate::{msg, AppResult};
+use crate::resources::{ResourcePanelData, ResourceRow, cpu_percent};
+use crate::telemetry::{TimelineEvent, write_timeline};
+use crate::{AppResult, msg};
 
 #[derive(Clone)]
 pub struct DockerClient {
@@ -60,13 +61,21 @@ impl DockerClient {
             .iter()
             .map(|row| {
                 let id = row.id.clone().unwrap_or_default();
-                async move { self.inspect_container_resources(&id).await.unwrap_or_default() }
+                async move {
+                    self.inspect_container_resources(&id)
+                        .await
+                        .unwrap_or_default()
+                }
             })
             .collect::<Vec<_>>();
         let resources = join_all(resource_futures).await;
         let mut containers = Vec::with_capacity(rows.len());
         for (row, (networks, volumes)) in rows.into_iter().zip(resources) {
-            let labels = row.labels.unwrap_or_default().into_iter().collect::<BTreeMap<_, _>>();
+            let labels = row
+                .labels
+                .unwrap_or_default()
+                .into_iter()
+                .collect::<BTreeMap<_, _>>();
             let name = row
                 .names
                 .unwrap_or_default()
@@ -76,10 +85,7 @@ impl DockerClient {
                 .trim_start_matches('/')
                 .to_string();
             let status = row.status.unwrap_or_default();
-            let state_text = row
-                .state
-                .map(|state| state.to_string())
-                .unwrap_or_default();
+            let state_text = row.state.map(|state| state.to_string()).unwrap_or_default();
             let compose_project = labels
                 .get("com.docker.compose.project")
                 .filter(|value| !value.is_empty())
@@ -151,10 +157,7 @@ impl DockerClient {
     }
 
     async fn list_network_names(&self) -> AppResult<Vec<String>> {
-        let networks = self
-            .docker
-            .list_networks(None)
-            .await?;
+        let networks = self.docker.list_networks(None).await?;
         Ok(networks
             .into_iter()
             .filter_map(|network| network.name)
@@ -162,7 +165,10 @@ impl DockerClient {
     }
 
     async fn list_volume_names(&self) -> AppResult<Vec<String>> {
-        let volumes = self.docker.list_volumes(None::<bollard::query_parameters::ListVolumesOptions>).await?;
+        let volumes = self
+            .docker
+            .list_volumes(None::<bollard::query_parameters::ListVolumesOptions>)
+            .await?;
         Ok(volumes
             .volumes
             .unwrap_or_default()
@@ -183,7 +189,11 @@ impl DockerClient {
         Ok(names)
     }
 
-    pub async fn execute_plan(&self, plan: &OperationPlan, dry_run: bool) -> AppResult<OperationResult> {
+    pub async fn execute_plan(
+        &self,
+        plan: &OperationPlan,
+        dry_run: bool,
+    ) -> AppResult<OperationResult> {
         if dry_run {
             return Ok(OperationResult {
                 action: plan.action,
@@ -330,7 +340,11 @@ impl DockerClient {
             }
         }
 
-        let status = if result.failed.is_empty() { "ok" } else { "error" };
+        let status = if result.failed.is_empty() {
+            "ok"
+        } else {
+            "error"
+        };
         let message = if result.failed.is_empty() {
             String::new()
         } else {
@@ -397,12 +411,14 @@ impl DockerClient {
             .networks
             .as_ref()
             .map(|networks| {
-                networks.values().fold((0, 0), |(rx_total, tx_total), network| {
-                    (
-                        rx_total + network.rx_bytes.unwrap_or(0),
-                        tx_total + network.tx_bytes.unwrap_or(0),
-                    )
-                })
+                networks
+                    .values()
+                    .fold((0, 0), |(rx_total, tx_total), network| {
+                        (
+                            rx_total + network.rx_bytes.unwrap_or(0),
+                            tx_total + network.tx_bytes.unwrap_or(0),
+                        )
+                    })
             })
             .unwrap_or((0, 0));
         let (block_read_bytes, block_write_bytes) = stats
@@ -410,13 +426,15 @@ impl DockerClient {
             .as_ref()
             .and_then(|blkio| blkio.io_service_bytes_recursive.as_ref())
             .map(|entries| {
-                entries.iter().fold((0, 0), |(read_total, write_total), entry| {
-                    match entry.op.as_deref().map(str::to_ascii_lowercase).as_deref() {
-                        Some("read") => (read_total + entry.value.unwrap_or(0), write_total),
-                        Some("write") => (read_total, write_total + entry.value.unwrap_or(0)),
-                        _ => (read_total, write_total),
-                    }
-                })
+                entries
+                    .iter()
+                    .fold((0, 0), |(read_total, write_total), entry| {
+                        match entry.op.as_deref().map(str::to_ascii_lowercase).as_deref() {
+                            Some("read") => (read_total + entry.value.unwrap_or(0), write_total),
+                            Some("write") => (read_total, write_total + entry.value.unwrap_or(0)),
+                            _ => (read_total, write_total),
+                        }
+                    })
             })
             .unwrap_or((0, 0));
         Ok(ContainerStats {
@@ -424,10 +442,7 @@ impl DockerClient {
             memory_usage,
             memory_limit,
             cpu_total,
-            cpu_percent: stats_cpu_percent(
-                stats.cpu_stats.as_ref(),
-                stats.precpu_stats.as_ref(),
-            ),
+            cpu_percent: stats_cpu_percent(stats.cpu_stats.as_ref(), stats.precpu_stats.as_ref()),
             network_rx_bytes,
             network_tx_bytes,
             block_read_bytes,
@@ -474,9 +489,9 @@ impl DockerClient {
     pub async fn watch_timeline(&self) -> AppResult<()> {
         let mut filters = std::collections::HashMap::new();
         filters.insert("type", vec!["container", "image", "network", "volume"]);
-        let mut stream = self
-            .docker
-            .events(Some(EventsOptionsBuilder::default().filters(&filters).build()));
+        let mut stream = self.docker.events(Some(
+            EventsOptionsBuilder::default().filters(&filters).build(),
+        ));
         while let Some(event) = stream.try_next().await? {
             let actor_id = event
                 .actor

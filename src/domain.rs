@@ -310,7 +310,11 @@ pub enum HealthStatus {
 }
 
 fn classify_container(container: &Container, config: &AppConfig) -> (ProjectKind, String) {
-    if let Some(project) = container.compose_project.as_deref().filter(|value| !value.is_empty()) {
+    if let Some(project) = container
+        .compose_project
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
         return (ProjectKind::Compose, project.to_string());
     }
     if let Some(project) = container
@@ -320,7 +324,11 @@ fn classify_container(container: &Container, config: &AppConfig) -> (ProjectKind
     {
         return (ProjectKind::Compose, project.clone());
     }
-    if let Some(stack) = container.stack_namespace.as_deref().filter(|value| !value.is_empty()) {
+    if let Some(stack) = container
+        .stack_namespace
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
         return (ProjectKind::Stack, stack.to_string());
     }
     if let Some(stack) = container
@@ -339,7 +347,10 @@ fn classify_container(container: &Container, config: &AppConfig) -> (ProjectKind
             return (ProjectKind::Compose, project);
         }
     }
-    (ProjectKind::Standalone, standalone_group_name(container, config))
+    (
+        ProjectKind::Standalone,
+        standalone_group_name(container, config),
+    )
 }
 
 fn infer_compose_project_from_name(name: &str, service: &str) -> Option<String> {
@@ -372,10 +383,16 @@ pub fn standalone_group_name(container: &Container, config: &AppConfig) -> Strin
     container.name.clone()
 }
 
-pub fn labels_from_pairs(pairs: impl IntoIterator<Item = (String, String)>) -> HashMap<String, String> {
+pub fn labels_from_pairs(
+    pairs: impl IntoIterator<Item = (String, String)>,
+) -> HashMap<String, String> {
     pairs.into_iter().collect()
 }
 
 fn unique_sorted(items: Vec<String>) -> Vec<String> {
-    items.into_iter().collect::<BTreeSet<_>>().into_iter().collect()
+    items
+        .into_iter()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }

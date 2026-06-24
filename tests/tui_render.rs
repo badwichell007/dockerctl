@@ -1,17 +1,17 @@
 use std::collections::BTreeMap;
 
+use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use dockerctl::config::{AppConfig, ThemeName};
 use dockerctl::domain::{Container, ContainerState, DockerSnapshot, OperationAction, SortMode};
 use dockerctl::resources::{ResourcePanelData, ResourceRow, ResourceTrend};
 use dockerctl::tui::{
-    apply_mouse_action, begin_execution_prompt, execution_plan_if_confirmed,
-    mark_resource_refresh_pending, mouse_action_for_event, push_execution_token, render_dashboard,
-    ContextMenuItem, ContextMenuState, DashboardState, MouseAction, TuiPanel,
+    ContextMenuItem, ContextMenuState, DashboardState, MouseAction, TuiPanel, apply_mouse_action,
+    begin_execution_prompt, execution_plan_if_confirmed, mark_resource_refresh_pending,
+    mouse_action_for_event, push_execution_token, render_dashboard,
 };
-use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::style::Color;
-use ratatui::Terminal;
 
 fn sample_snapshot() -> DockerSnapshot {
     DockerSnapshot::from_containers(
@@ -91,7 +91,10 @@ fn two_project_snapshot() -> DockerSnapshot {
         ],
         vec!["alpha_default".into(), "mingli_default".into()],
         vec![],
-        vec!["example/alpha:latest".into(), "example/mingli:latest".into()],
+        vec![
+            "example/alpha:latest".into(),
+            "example/mingli:latest".into(),
+        ],
         &AppConfig::default(),
     )
 }
@@ -830,8 +833,14 @@ fn mouse_event_maps_context_menu_hover() {
 #[test]
 fn mouse_event_ignores_clicks_outside_main_area() {
     let header_click = mouse(MouseEventKind::Down(MouseButton::Left), 20, 1);
-    assert_eq!(mouse_action_for_event(header_click, (110, 32), 1, None), None);
+    assert_eq!(
+        mouse_action_for_event(header_click, (110, 32), 1, None),
+        None
+    );
 
     let footer_click = mouse(MouseEventKind::Down(MouseButton::Left), 20, 31);
-    assert_eq!(mouse_action_for_event(footer_click, (110, 32), 1, None), None);
+    assert_eq!(
+        mouse_action_for_event(footer_click, (110, 32), 1, None),
+        None
+    );
 }

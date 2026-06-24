@@ -22,7 +22,11 @@ impl ResourcePanelData {
         }
     }
 
-    pub fn sampled(project: impl Into<String>, sampled_at_ms: u128, rows: Vec<ResourceRow>) -> Self {
+    pub fn sampled(
+        project: impl Into<String>,
+        sampled_at_ms: u128,
+        rows: Vec<ResourceRow>,
+    ) -> Self {
         let summary = ResourceSummary::from_rows(&rows);
         Self {
             project: project.into(),
@@ -187,7 +191,10 @@ pub fn resource_pressure_hint(rows: &[ResourceRow]) -> Option<String> {
         return Some(format!("{} stats error: {error}", row.container_name));
     }
     if row.cpu_percent >= 80.0 {
-        return Some(format!("{} high CPU {:.1}%", row.container_name, row.cpu_percent));
+        return Some(format!(
+            "{} high CPU {:.1}%",
+            row.container_name, row.cpu_percent
+        ));
     }
     Some(format!(
         "{} high memory {:.1}%",
@@ -195,7 +202,10 @@ pub fn resource_pressure_hint(rows: &[ResourceRow]) -> Option<String> {
     ))
 }
 
-pub fn resource_trend(previous: &ResourcePanelData, current: &ResourcePanelData) -> Option<ResourceTrend> {
+pub fn resource_trend(
+    previous: &ResourcePanelData,
+    current: &ResourcePanelData,
+) -> Option<ResourceTrend> {
     if previous.project != current.project || previous.loading || current.loading {
         return None;
     }

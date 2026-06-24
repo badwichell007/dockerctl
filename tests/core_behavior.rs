@@ -1,4 +1,4 @@
-use dockerctl::config::{parse_group_config, parse_theme, AppConfig, ThemeName};
+use dockerctl::config::{AppConfig, ThemeName, parse_group_config, parse_theme};
 use dockerctl::domain::{
     Container, ContainerState, DockerSnapshot, OperationAction, ProjectKind, SortMode,
 };
@@ -52,7 +52,11 @@ fn fixture_snapshot() -> DockerSnapshot {
         ],
         vec!["shop_default".into(), "bridge".into()],
         vec!["shop_data".into(), "redis_data".into()],
-        vec!["example/web:latest".into(), "example/worker:latest".into(), "redis:7".into()],
+        vec![
+            "example/web:latest".into(),
+            "example/worker:latest".into(),
+            "redis:7".into(),
+        ],
         &config,
     )
 }
@@ -72,7 +76,10 @@ fn config_supports_exact_prefix_and_image_prefix_groups() {
 "#,
     );
 
-    assert_eq!(config.exact.get("one-off").map(String::as_str), Some("tools"));
+    assert_eq!(
+        config.exact.get("one-off").map(String::as_str),
+        Some("tools")
+    );
     assert_eq!(config.prefix, vec![("redis-".into(), "cache".into())]);
     assert_eq!(
         config.image_prefix,
@@ -156,7 +163,10 @@ fn purge_plan_requires_stronger_confirmation_and_includes_images() {
         .expect("purge plan");
 
     assert_eq!(plan.volumes, vec!["shop_data"]);
-    assert_eq!(plan.images, vec!["example/web:latest", "example/worker:latest"]);
+    assert_eq!(
+        plan.images,
+        vec!["example/web:latest", "example/worker:latest"]
+    );
     assert_eq!(plan.confirmation_token.as_deref(), Some("DELETE-shop"));
 }
 
@@ -202,7 +212,10 @@ theme = "signal"
     .expect("config");
 
     assert_eq!(parse_theme(&config.tui.theme), ThemeName::Signal);
-    assert_eq!(parse_theme(&AppConfig::default().tui.theme), ThemeName::Cockpit);
+    assert_eq!(
+        parse_theme(&AppConfig::default().tui.theme),
+        ThemeName::Cockpit
+    );
     assert_eq!(parse_theme("cockpit"), ThemeName::Cockpit);
     assert_eq!(parse_theme("unknown"), ThemeName::Industrial);
 }

@@ -60,10 +60,7 @@ fn safe_prune_help_documents_dry_run_and_strong_confirmation() {
 
 #[test]
 fn init_config_refuses_to_overwrite_existing_config_without_force() {
-    let temp = std::env::temp_dir().join(format!(
-        "dockerctl-test-{}",
-        std::process::id()
-    ));
+    let temp = std::env::temp_dir().join(format!("dockerctl-test-{}", std::process::id()));
     let config_dir = temp.join("config");
     let dockerctl_dir = config_dir.join("dockerctl");
     std::fs::create_dir_all(&dockerctl_dir).expect("config dir");

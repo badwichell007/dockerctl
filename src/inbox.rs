@@ -69,7 +69,10 @@ pub fn build_ops_inbox(
                 category: "Resource Pressure".to_string(),
                 project: Some(data.project.clone()),
                 title: format!("Stats error: {}", row.container_name),
-                detail: row.error.clone().unwrap_or_else(|| "stats failed".to_string()),
+                detail: row
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "stats failed".to_string()),
                 command: format!("dockerctl stats {}", row.container_id),
             });
         }
@@ -104,7 +107,11 @@ pub fn build_ops_inbox(
             detail: "Review restart impact before touching containers.".to_string(),
             command: format!("dockerctl rescue {} --dry-run", project.name),
         });
-    } else if let Some(project) = snapshot.projects.iter().find(|project| project.active() > 0) {
+    } else if let Some(project) = snapshot
+        .projects
+        .iter()
+        .find(|project| project.active() > 0)
+    {
         items.push(InboxItem {
             severity: InboxSeverity::Info,
             category: "Next Action".to_string(),
@@ -147,7 +154,10 @@ fn project_risk_item(project: &Project, severity: InboxSeverity) -> InboxItem {
         project: Some(project.name.clone()),
         title: format!("{} needs attention", project.name),
         detail: signals.join(", "),
-        command: format!("dockerctl doctor --json | jq '.projects[] | select(.project==\"{}\")'", project.name),
+        command: format!(
+            "dockerctl doctor --json | jq '.projects[] | select(.project==\"{}\")'",
+            project.name
+        ),
     }
 }
 

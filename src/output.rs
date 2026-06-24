@@ -2,8 +2,8 @@ use std::io::{self, Write};
 
 use serde::Serialize;
 
-use crate::domain::Project;
 use crate::AppResult;
+use crate::domain::Project;
 
 pub fn print_json<T: Serialize>(value: &T) -> AppResult<()> {
     let stdout = io::stdout();

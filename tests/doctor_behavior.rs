@@ -121,12 +121,27 @@ fn doctor_reports_ports_public_bind_restart_loop_and_anonymous_volume() {
     );
 
     let reports = analyze_snapshot(&snapshot);
-    let shop = reports.iter().find(|report| report.project == "shop").expect("shop");
+    let shop = reports
+        .iter()
+        .find(|report| report.project == "shop")
+        .expect("shop");
 
     assert_eq!(shop.status, HealthStatus::Critical);
-    assert!(shop.findings.iter().any(|finding| finding.contains("restart loop")));
-    assert!(shop.findings.iter().any(|finding| finding.contains("公网监听")));
-    assert!(shop.findings.iter().any(|finding| finding.contains("匿名卷")));
+    assert!(
+        shop.findings
+            .iter()
+            .any(|finding| finding.contains("restart loop"))
+    );
+    assert!(
+        shop.findings
+            .iter()
+            .any(|finding| finding.contains("公网监听"))
+    );
+    assert!(
+        shop.findings
+            .iter()
+            .any(|finding| finding.contains("匿名卷"))
+    );
     let global = global_findings(&snapshot);
     assert!(global.iter().any(|finding| finding.contains("端口 8080")));
     assert!(global.iter().any(|finding| finding.contains("镜像膨胀")));
@@ -139,7 +154,19 @@ fn recipes_have_stable_scriptable_shape() {
     let recipes = dockerctl::recipes::builtin_recipes();
 
     assert!(recipes.iter().any(|recipe| recipe.name == "panic-stop"));
-    assert!(recipes.iter().any(|recipe| recipe.name == "rescue-unhealthy"));
-    assert!(recipes.iter().any(|recipe| recipe.name == "preflight-delete"));
-    assert!(recipes.iter().all(|recipe| recipe.command.starts_with("dockerctl ")));
+    assert!(
+        recipes
+            .iter()
+            .any(|recipe| recipe.name == "rescue-unhealthy")
+    );
+    assert!(
+        recipes
+            .iter()
+            .any(|recipe| recipe.name == "preflight-delete")
+    );
+    assert!(
+        recipes
+            .iter()
+            .all(|recipe| recipe.command.starts_with("dockerctl "))
+    );
 }

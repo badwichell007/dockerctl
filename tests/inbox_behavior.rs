@@ -1,6 +1,6 @@
 use dockerctl::config::AppConfig;
 use dockerctl::domain::{Container, ContainerState, DockerSnapshot};
-use dockerctl::inbox::{build_ops_inbox, InboxSeverity};
+use dockerctl::inbox::{InboxSeverity, build_ops_inbox};
 use dockerctl::resources::{ResourcePanelData, ResourceRow};
 
 fn snapshot_with_risk_and_cleanup() -> DockerSnapshot {
@@ -84,17 +84,31 @@ fn ops_inbox_prioritizes_risk_pressure_cleanup_and_next_action() {
 
     assert_eq!(inbox.items[0].severity, InboxSeverity::Critical);
     assert!(inbox.items.iter().any(|item| item.category == "Critical"));
-    assert!(inbox.items.iter().any(|item| item.category == "Resource Pressure"));
+    assert!(
+        inbox
+            .items
+            .iter()
+            .any(|item| item.category == "Resource Pressure")
+    );
     assert!(inbox.items.iter().any(|item| item.category == "Cleanup"));
-    assert!(inbox.items.iter().any(|item| item.category == "Next Action"));
-    assert!(inbox
-        .items
-        .iter()
-        .any(|item| item.command == "dockerctl rescue shop --dry-run"));
-    assert!(inbox
-        .items
-        .iter()
-        .any(|item| item.command == "dockerctl safe-prune --dry-run"));
+    assert!(
+        inbox
+            .items
+            .iter()
+            .any(|item| item.category == "Next Action")
+    );
+    assert!(
+        inbox
+            .items
+            .iter()
+            .any(|item| item.command == "dockerctl rescue shop --dry-run")
+    );
+    assert!(
+        inbox
+            .items
+            .iter()
+            .any(|item| item.command == "dockerctl safe-prune --dry-run")
+    );
 }
 
 #[test]

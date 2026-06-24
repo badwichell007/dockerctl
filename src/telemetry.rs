@@ -3,8 +3,8 @@ use std::io::Write;
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::timeline_log_path;
 use crate::AppResult;
+use crate::config::timeline_log_path;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TimelineEvent {
