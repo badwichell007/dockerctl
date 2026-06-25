@@ -1393,6 +1393,7 @@ pub fn render_dashboard(frame: &mut ratatui::Frame, state: &mut DashboardState) 
     render_projects_table(frame, outer[2], state);
     render_cockpit_bottom(frame, outer[3], state);
     render_command_bar(frame, outer[4], state);
+    render_focus_overlay(frame, area, state);
     render_context_menu(frame, area, state);
     render_exec_picker(frame, area, state);
 }
@@ -1434,6 +1435,161 @@ fn render_compact_notice(frame: &mut ratatui::Frame, area: Rect) {
             ),
         area,
     );
+}
+
+fn render_focus_overlay(frame: &mut ratatui::Frame, area: Rect, state: &DashboardState) {
+    let TuiPanel::Plan(action) = state.panel else {
+        return;
+    };
+    let palette = theme_palette(state.theme);
+    let border = if is_destructive_action(action) {
+        palette.danger
+    } else if action == OperationAction::Rescue {
+        palette.warning
+    } else {
+        palette.primary
+    };
+    let width = area.width.saturating_sub(8).max(1);
+    let height = area.height.saturating_sub(4).max(1);
+    let rect = Rect::new(area.x + 4, area.y + 2, width, height);
+    let title = if state.execution_prompt.is_some() {
+        format!("FOCUS CONFIRMATION / {}", operation_label(action))
+    } else {
+        format!("FOCUS EXECUTION PREVIEW / {}", operation_label(action))
+    };
+    let lines = focus_overlay_lines(state, action, palette);
+    frame.render_widget(Clear, rect);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .style(Style::default().fg(Color::White).bg(palette.surface))
+            .block(
+                Block::default()
+                    .title(title)
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(border))
+                    .style(Style::default().bg(palette.surface)),
+            ),
+        rect,
+    );
+}
+
+fn focus_overlay_lines(
+    state: &DashboardState,
+    action: OperationAction,
+    palette: ThemePalette,
+) -> Vec<Line<'static>> {
+    let Ok(plan) = state.plan_for(action) else {
+        return vec![Line::from(Span::styled(
+            "无法生成执行预案。",
+            Style::default().fg(palette.danger),
+        ))];
+    };
+    let confirmation = state.execution_prompt.as_ref();
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled(
+                operation_label(action),
+                Style::default()
+                    .fg(if confirmation.is_some() {
+                        palette.warning
+                    } else {
+                        palette.primary
+                    })
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" | target project: ", Style::default().fg(palette.muted)),
+            Span::styled(plan.projects.join(", "), Style::default().fg(Color::White)),
+        ]),
+        Line::from(vec![
+            Span::styled("summary: ", Style::default().fg(palette.muted)),
+            Span::styled(plan.summary.clone(), Style::default().fg(Color::White)),
+        ]),
+        Line::from(vec![
+            Span::styled("scope: ", Style::default().fg(palette.muted)),
+            Span::styled(
+                format!(
+                    "{} containers / {} networks / {} volumes / {} images",
+                    plan.containers.len(),
+                    plan.networks.len(),
+                    plan.volumes.len(),
+                    plan.images.len()
+                ),
+                Style::default().fg(palette.primary),
+            ),
+        ]),
+        Line::from(""),
+    ];
+
+    if let Some(prompt) = confirmation {
+        lines.extend(focus_confirmation_lines(&plan, prompt, palette));
+    } else {
+        lines.push(Line::from(vec![
+            Span::styled(
+                "Enter confirm",
+                Style::default()
+                    .fg(palette.success)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                " | Esc back | mouse cannot execute",
+                Style::default().fg(palette.muted),
+            ),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+    lines.extend(text_lines(format_plan(plan, confirmation)));
+    lines
+}
+
+fn focus_confirmation_lines(
+    plan: &OperationPlan,
+    prompt: &ExecutionPrompt,
+    palette: ThemePalette,
+) -> Vec<Line<'static>> {
+    if let Some(token) = plan.confirmation_token.as_deref() {
+        return vec![
+            Line::from(vec![
+                Span::styled(
+                    "typed: ",
+                    Style::default()
+                        .fg(palette.warning)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    prompt.token_input.clone(),
+                    Style::default().fg(Color::White),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("required token: ", Style::default().fg(palette.muted)),
+                Span::styled(
+                    token.to_string(),
+                    Style::default()
+                        .fg(palette.danger)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]),
+            Line::from(Span::styled(
+                "输入完整 token 后按 Enter 执行 | Esc cancel",
+                Style::default().fg(palette.warning),
+            )),
+        ];
+    }
+    vec![
+        Line::from(Span::styled(
+            "Enter again to execute",
+            Style::default()
+                .fg(palette.warning)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            "Esc cancel",
+            Style::default().fg(palette.muted),
+        )),
+    ]
 }
 
 fn render_header(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, state: &DashboardState) {

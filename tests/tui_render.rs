@@ -827,6 +827,49 @@ fn execution_prompt_renders_second_enter_confirmation() {
 }
 
 #[test]
+fn plan_panel_renders_focus_overlay_for_readable_execution_preview() {
+    let snapshot = sample_snapshot();
+    let mut state = DashboardState::from_snapshot(snapshot, SortMode::Severity);
+    state.panel = TuiPanel::Plan(OperationAction::Restart);
+
+    let backend = TestBackend::new(120, 36);
+    let mut terminal = Terminal::new(backend).expect("terminal");
+    terminal
+        .draw(|frame| render_dashboard(frame, &mut state))
+        .expect("draw");
+
+    let rendered = format!("{:?}", terminal.backend().buffer());
+
+    assert!(rendered.contains("FOCUS EXECUTION PREVIEW"));
+    assert!(rendered.contains("Restart"));
+    assert!(rendered.contains("target project"));
+    assert!(rendered.contains("Enter confirm"));
+}
+
+#[test]
+fn execution_prompt_renders_large_focus_confirmation_overlay() {
+    let snapshot = sample_snapshot();
+    let mut state = DashboardState::from_snapshot(snapshot, SortMode::Severity);
+    state.panel = TuiPanel::Plan(OperationAction::Purge);
+
+    begin_execution_prompt(&mut state);
+    push_execution_token(&mut state, 'D');
+
+    let backend = TestBackend::new(120, 36);
+    let mut terminal = Terminal::new(backend).expect("terminal");
+    terminal
+        .draw(|frame| render_dashboard(frame, &mut state))
+        .expect("draw");
+
+    let rendered = format!("{:?}", terminal.backend().buffer());
+
+    assert!(rendered.contains("FOCUS CONFIRMATION"));
+    assert!(rendered.contains("DELETE-mingli"));
+    assert!(rendered.contains("typed: D"));
+    assert!(rendered.contains("Esc cancel"));
+}
+
+#[test]
 fn dangerous_execution_requires_typed_token() {
     let snapshot = sample_snapshot();
     let mut state = DashboardState::from_snapshot(snapshot, SortMode::Severity);
