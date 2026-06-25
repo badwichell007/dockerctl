@@ -7,7 +7,7 @@
 面向 Linux 日常运维的高性能 Docker TUI/CLI。以项目为中心聚合 Compose、Stack 和 standalone 容器，提供资源监控、风险预演、安全执行、异常恢复、审计时间线和脚本化 JSON 输出。
 
 [![CI](https://github.com/badwichell007/hugdocker/actions/workflows/ci.yml/badge.svg)](https://github.com/badwichell007/hugdocker/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v0.4.2-0ea5e9)](https://github.com/badwichell007/hugdocker/releases)
+[![Release](https://img.shields.io/badge/release-v0.4.3-0ea5e9)](https://github.com/badwichell007/hugdocker/releases)
 [![Rust](https://img.shields.io/badge/Rust-2024-f97316)](https://www.rust-lang.org/)
 [![TUI](https://img.shields.io/badge/TUI-ratatui%20%2B%20crossterm-22c55e)](https://ratatui.rs/)
 [![Docker API](https://img.shields.io/badge/Docker%20API-bollard-2563eb)](https://github.com/fussybeaver/bollard)
@@ -120,7 +120,7 @@ export PATH="$HOME/.local/bin:$PATH"
 ### 指定版本
 
 ```bash
-HUGDOCKER_VERSION=v0.4.2 curl -fsSL https://raw.githubusercontent.com/badwichell007/hugdocker/main/scripts/install.sh | bash
+HUGDOCKER_VERSION=v0.4.3 curl -fsSL https://raw.githubusercontent.com/badwichell007/hugdocker/main/scripts/install.sh | bash
 ```
 
 ### 源码安装
@@ -271,7 +271,7 @@ Inbox 只提供建议和安全预演命令，不直接执行修改操作。按 `
 | 左键点击项目行 | 选择或反选项目 |
 | 右键点击项目行 | 打开项目管理菜单 |
 | 鼠标移动到菜单项 | 高亮当前菜单选择 |
-| 左键点击菜单项 | 进入详情、诊断、日志、资源或操作预演 |
+| 左键点击菜单项 | 进入详情、诊断、日志、资源、容器 shell 或操作预演 |
 | 鼠标滚轮 | 移动项目光标 |
 
 右键菜单：
@@ -285,9 +285,12 @@ Restart
 Rescue
 Logs
 Resources
+Exec
 Remove
 Purge
 ```
+
+`Exec` 会临时退出 TUI 全屏界面，执行 `docker exec -it <container> sh` 进入当前项目第一个 active 容器；退出 shell 后自动回到 TUI。
 
 选中的项目会显示 `[x]`、黄色加粗和暗色背景。即使光标移动到其他项目，已选状态仍保留，避免“选中了但看不出来”。
 
@@ -695,6 +698,11 @@ OperationAction -> OperationPlan -> Confirmation -> Executor -> Audit
 - 优先做好本地 Docker 运维，不把项目扩张成复杂平台。
 
 ## 更新日志
+
+### v0.4.3
+
+- TUI 右键菜单新增 `Exec`，可直接进入当前项目第一个 active 容器。
+- Exec 会临时退出 TUI 全屏界面并运行 `docker exec -it <container> sh`，退出 shell 后自动回到 TUI。
 
 ### v0.4.2
 

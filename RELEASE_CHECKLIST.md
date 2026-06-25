@@ -58,8 +58,8 @@ hugdocker stats <container>
 6. 发布 tag
 
 ```bash
-git tag v0.4.2
-git push origin v0.4.2
+git tag v0.4.3
+git push origin v0.4.3
 ```
 
 GitHub Actions 会构建 Linux x86_64/aarch64 release 包。

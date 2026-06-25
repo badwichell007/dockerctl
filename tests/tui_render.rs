@@ -327,6 +327,7 @@ fn right_click_menu_renders_project_management_actions() {
     assert!(rendered.contains("Rescue"));
     assert!(rendered.contains("Logs"));
     assert!(rendered.contains("Resources"));
+    assert!(rendered.contains("Exec"));
     assert!(rendered.contains("Remove"));
     assert!(rendered.contains("Purge"));
 }
@@ -415,6 +416,15 @@ fn context_menu_logs_and_resources_open_observability_panels() {
         },
     );
     assert_eq!(state.panel, TuiPanel::Resources);
+
+    apply_mouse_action(
+        &mut state,
+        MouseAction::ContextMenuClick {
+            item: ContextMenuItem::Exec,
+        },
+    );
+    assert_eq!(state.panel, TuiPanel::Resources);
+    assert!(state.status.contains("Exec"));
 }
 
 #[test]
@@ -801,6 +811,14 @@ fn mouse_event_maps_right_click_and_menu_item_clicks() {
         mouse_action_for_event(rescue_click, (110, 32), 1, Some(&menu)),
         Some(MouseAction::ContextMenuClick {
             item: ContextMenuItem::Rescue,
+        })
+    );
+
+    let exec_click = mouse(MouseEventKind::Down(MouseButton::Left), 6, 19);
+    assert_eq!(
+        mouse_action_for_event(exec_click, (110, 32), 1, Some(&menu)),
+        Some(MouseAction::ContextMenuClick {
+            item: ContextMenuItem::Exec,
         })
     );
 

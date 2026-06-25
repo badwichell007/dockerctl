@@ -1,6 +1,6 @@
 [package]
 name = "hugdocker"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2024"
 description = "Fast project-first Docker TUI/CLI for Linux daily operations"
 license = "MIT"

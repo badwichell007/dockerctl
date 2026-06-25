@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::io;
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{
@@ -41,7 +42,7 @@ const PROJECT_HEADER_ROWS: u16 = 2;
 const CONTEXT_MENU_WIDTH: u16 = 36;
 const MIN_TUI_WIDTH: u16 = 90;
 const MIN_TUI_HEIGHT: u16 = 22;
-const CONTEXT_MENU_ITEMS: [ContextMenuItem; 10] = [
+const CONTEXT_MENU_ITEMS: [ContextMenuItem; 11] = [
     ContextMenuItem::Inspect,
     ContextMenuItem::Doctor,
     ContextMenuItem::Start,
@@ -50,6 +51,7 @@ const CONTEXT_MENU_ITEMS: [ContextMenuItem; 10] = [
     ContextMenuItem::Rescue,
     ContextMenuItem::Logs,
     ContextMenuItem::Resources,
+    ContextMenuItem::Exec,
     ContextMenuItem::Remove,
     ContextMenuItem::Purge,
 ];
@@ -72,6 +74,28 @@ impl TerminalSession {
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend)?;
         Ok(Self { terminal })
+    }
+
+    fn suspend(&mut self) -> AppResult<()> {
+        disable_raw_mode()?;
+        execute!(
+            self.terminal.backend_mut(),
+            DisableMouseCapture,
+            LeaveAlternateScreen
+        )?;
+        self.terminal.show_cursor()?;
+        Ok(())
+    }
+
+    fn resume(&mut self) -> AppResult<()> {
+        enable_raw_mode()?;
+        execute!(
+            self.terminal.backend_mut(),
+            EnterAlternateScreen,
+            EnableMouseCapture
+        )?;
+        self.terminal.clear()?;
+        Ok(())
     }
 }
 
@@ -123,6 +147,7 @@ pub enum ContextMenuItem {
     Rescue,
     Logs,
     Resources,
+    Exec,
     Remove,
     Purge,
 }
@@ -138,6 +163,7 @@ impl ContextMenuItem {
             Self::Rescue => "Rescue",
             Self::Logs => "Logs",
             Self::Resources => "Resources",
+            Self::Exec => "Exec",
             Self::Remove => "Remove",
             Self::Purge => "Purge",
         }
@@ -153,23 +179,25 @@ impl ContextMenuItem {
             Self::Rescue => "restart risky",
             Self::Logs => "log lens",
             Self::Resources => "resource view",
+            Self::Exec => "container shell",
             Self::Remove => "confirm remove",
             Self::Purge => "confirm purge",
         }
     }
 
-    fn panel(self) -> TuiPanel {
+    fn panel(self) -> Option<TuiPanel> {
         match self {
-            Self::Inspect => TuiPanel::Detail,
-            Self::Doctor => TuiPanel::Doctor,
-            Self::Start => TuiPanel::Plan(OperationAction::Start),
-            Self::Stop => TuiPanel::Plan(OperationAction::Stop),
-            Self::Restart => TuiPanel::Plan(OperationAction::Restart),
-            Self::Rescue => TuiPanel::Plan(OperationAction::Rescue),
-            Self::Logs => TuiPanel::Logs,
-            Self::Resources => TuiPanel::Resources,
-            Self::Remove => TuiPanel::Plan(OperationAction::Remove),
-            Self::Purge => TuiPanel::Plan(OperationAction::Purge),
+            Self::Inspect => Some(TuiPanel::Detail),
+            Self::Doctor => Some(TuiPanel::Doctor),
+            Self::Start => Some(TuiPanel::Plan(OperationAction::Start)),
+            Self::Stop => Some(TuiPanel::Plan(OperationAction::Stop)),
+            Self::Restart => Some(TuiPanel::Plan(OperationAction::Restart)),
+            Self::Rescue => Some(TuiPanel::Plan(OperationAction::Rescue)),
+            Self::Logs => Some(TuiPanel::Logs),
+            Self::Resources => Some(TuiPanel::Resources),
+            Self::Exec => None,
+            Self::Remove => Some(TuiPanel::Plan(OperationAction::Remove)),
+            Self::Purge => Some(TuiPanel::Plan(OperationAction::Purge)),
         }
     }
 }
@@ -415,10 +443,14 @@ pub fn apply_mouse_action(state: &mut DashboardState, action: MouseAction) {
             }
         }
         MouseAction::ContextMenuClick { item } => {
-            state.panel = item.panel();
             state.context_menu = None;
             state.execution_prompt = None;
-            state.status = format!("已选择右键菜单动作: {}", item.label());
+            if let Some(panel) = item.panel() {
+                state.panel = panel;
+                state.status = format!("已选择右键菜单动作: {}", item.label());
+            } else {
+                state.status = "Exec 将进入当前项目的第一个 active 容器。".to_string();
+            }
         }
         MouseAction::CloseContextMenu => {
             state.context_menu = None;
@@ -510,19 +542,25 @@ impl TuiApp {
             if event::poll(Duration::from_millis(80))? {
                 match event::read()? {
                     Event::Key(key) => {
-                        if key.kind == KeyEventKind::Press && self.handle_key(key.code).await? {
+                        if key.kind == KeyEventKind::Press
+                            && self.handle_key(key.code, &mut session).await?
+                        {
                             return Ok(());
                         }
                         dirty = true;
                     }
-                    Event::Mouse(mouse) => dirty |= self.handle_mouse(mouse)?,
+                    Event::Mouse(mouse) => dirty |= self.handle_mouse(mouse, &mut session).await?,
                     _ => {}
                 }
             }
         }
     }
 
-    fn handle_mouse(&mut self, mouse: MouseEvent) -> AppResult<bool> {
+    async fn handle_mouse(
+        &mut self,
+        mouse: MouseEvent,
+        session: &mut TerminalSession,
+    ) -> AppResult<bool> {
         let Some(action) = mouse_action_for_event(
             mouse,
             terminal_size()?,
@@ -531,6 +569,15 @@ impl TuiApp {
         ) else {
             return Ok(false);
         };
+        if let MouseAction::ContextMenuClick {
+            item: ContextMenuItem::Exec,
+        } = action
+        {
+            self.context_menu = None;
+            self.execution_prompt = None;
+            self.exec_current_container(session).await?;
+            return Ok(true);
+        }
         let mut state = DashboardState {
             snapshot: self.snapshot.clone(),
             filtered: self.filtered.clone(),
@@ -564,12 +611,16 @@ impl TuiApp {
         Ok(true)
     }
 
-    async fn handle_key(&mut self, code: KeyCode) -> AppResult<bool> {
+    async fn handle_key(
+        &mut self,
+        code: KeyCode,
+        session: &mut TerminalSession,
+    ) -> AppResult<bool> {
         if self.execution_prompt.is_some() {
             return self.handle_execution_key(code).await;
         }
         if self.context_menu.is_some() {
-            return self.handle_context_menu_key(code);
+            return self.handle_context_menu_key(code, session).await;
         }
         match code {
             KeyCode::Esc if self.context_menu.is_some() => {
@@ -694,7 +745,11 @@ impl TuiApp {
         Ok(false)
     }
 
-    fn handle_context_menu_key(&mut self, code: KeyCode) -> AppResult<bool> {
+    async fn handle_context_menu_key(
+        &mut self,
+        code: KeyCode,
+        session: &mut TerminalSession,
+    ) -> AppResult<bool> {
         match code {
             KeyCode::Esc => self.context_menu = None,
             KeyCode::Up | KeyCode::Char('k') => {
@@ -710,6 +765,12 @@ impl TuiApp {
             }
             KeyCode::Enter => {
                 if let Some(item) = self.context_menu.as_ref().map(context_menu_selected_item) {
+                    if item == ContextMenuItem::Exec {
+                        self.context_menu = None;
+                        self.execution_prompt = None;
+                        self.exec_current_container(session).await?;
+                        return Ok(false);
+                    }
                     let mut state = self.dashboard_state();
                     apply_mouse_action(&mut state, MouseAction::ContextMenuClick { item });
                     self.panel = state.panel;
@@ -721,6 +782,26 @@ impl TuiApp {
             _ => {}
         }
         Ok(false)
+    }
+
+    async fn exec_current_container(&mut self, session: &mut TerminalSession) -> AppResult<()> {
+        let Some(container) = self.current_exec_container() else {
+            self.status = "当前项目没有 active 容器可进入。".to_string();
+            return Ok(());
+        };
+        let label = container.name.clone();
+        let id = container.id.clone();
+        session.suspend()?;
+        let result = Command::new("docker")
+            .args(["exec", "-it", &id, "sh"])
+            .status();
+        session.resume()?;
+        self.status = match result {
+            Ok(status) if status.success() => format!("已退出容器 shell: {label}"),
+            Ok(status) => format!("容器 shell 已退出，状态码: {status}"),
+            Err(error) => format!("无法执行 docker exec: {error}"),
+        };
+        Ok(())
     }
 
     async fn handle_execution_key(&mut self, code: KeyCode) -> AppResult<bool> {
@@ -862,6 +943,13 @@ impl TuiApp {
         self.list_state
             .selected()
             .and_then(|index| self.filtered.get(index))
+    }
+
+    fn current_exec_container(&self) -> Option<&crate::domain::Container> {
+        self.current_project()?
+            .containers
+            .iter()
+            .find(|container| container.state.is_active() && !container.id.is_empty())
     }
 
     fn shift_log_container(&mut self, delta: isize) {
