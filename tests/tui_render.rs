@@ -5,9 +5,9 @@ use hugdocker::config::{AppConfig, ThemeName};
 use hugdocker::domain::{Container, ContainerState, DockerSnapshot, OperationAction, SortMode};
 use hugdocker::resources::{ResourcePanelData, ResourceRow, ResourceTrend};
 use hugdocker::tui::{
-    ContextMenuItem, ContextMenuState, DashboardState, MouseAction, TuiPanel, apply_mouse_action,
-    begin_execution_prompt, execution_plan_if_confirmed, mark_resource_refresh_pending,
-    mouse_action_for_event, push_execution_token, render_dashboard,
+    ContextMenuItem, ContextMenuState, DashboardState, MouseAction, TuiPanel, apply_enter_key,
+    apply_mouse_action, begin_execution_prompt, execution_plan_if_confirmed,
+    mark_resource_refresh_pending, mouse_action_for_event, push_execution_token, render_dashboard,
 };
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
@@ -692,6 +692,19 @@ fn context_menu_restart_opens_only_restart_plan() {
     assert_eq!(state.panel, TuiPanel::Plan(OperationAction::Restart));
     assert_eq!(plan.action, OperationAction::Restart);
     assert_eq!(plan.confirmation_token, None);
+}
+
+#[test]
+fn enter_on_logs_panel_does_not_switch_to_stop_plan() {
+    let snapshot = sample_snapshot();
+    let mut state = DashboardState::from_snapshot(snapshot, SortMode::Severity);
+    state.panel = TuiPanel::Logs;
+
+    apply_enter_key(&mut state);
+
+    assert_eq!(state.panel, TuiPanel::Logs);
+    assert!(state.execution_prompt.is_none());
+    assert!(state.status.contains("只执行当前 Plan"));
 }
 
 #[test]

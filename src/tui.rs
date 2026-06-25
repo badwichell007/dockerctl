@@ -342,6 +342,15 @@ pub fn begin_execution_prompt(state: &mut DashboardState) {
     };
 }
 
+pub fn apply_enter_key(state: &mut DashboardState) {
+    state.context_menu = None;
+    if matches!(state.panel, TuiPanel::Plan(_)) {
+        begin_execution_prompt(state);
+    } else {
+        state.status = "Enter 只执行当前 Plan；请用 1-5 或右键先选择动作。".to_string();
+    }
+}
+
 pub fn cancel_execution_prompt(state: &mut DashboardState) {
     state.execution_prompt = None;
     state.status = "已取消 TUI 执行。".to_string();
@@ -683,15 +692,12 @@ impl TuiApp {
                 self.rebuild_filtered();
             }
             KeyCode::Enter => {
-                self.context_menu = None;
-                if matches!(self.panel, TuiPanel::Plan(_)) {
-                    let mut state = self.dashboard_state();
-                    begin_execution_prompt(&mut state);
-                    self.status = state.status;
-                    self.execution_prompt = state.execution_prompt;
-                } else {
-                    self.panel = TuiPanel::Plan(OperationAction::Stop);
-                }
+                let mut state = self.dashboard_state();
+                apply_enter_key(&mut state);
+                self.context_menu = state.context_menu;
+                self.panel = state.panel;
+                self.status = state.status;
+                self.execution_prompt = state.execution_prompt;
             }
             KeyCode::Char('1') => {
                 self.context_menu = None;
