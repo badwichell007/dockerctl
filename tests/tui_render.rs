@@ -5,8 +5,8 @@ use hugdocker::config::{AppConfig, ThemeName};
 use hugdocker::domain::{Container, ContainerState, DockerSnapshot, OperationAction, SortMode};
 use hugdocker::resources::{ResourcePanelData, ResourceRow, ResourceTrend};
 use hugdocker::tui::{
-    ContextMenuItem, ContextMenuState, DashboardState, MouseAction, TuiPanel, apply_enter_key,
-    apply_mouse_action, begin_execution_prompt, execution_plan_if_confirmed,
+    ContextMenuItem, ContextMenuState, DashboardState, LogPanelData, MouseAction, TuiPanel,
+    apply_enter_key, apply_mouse_action, begin_execution_prompt, execution_plan_if_confirmed,
     mark_resource_refresh_pending, mouse_action_for_event, push_execution_token, render_dashboard,
 };
 use ratatui::Terminal;
@@ -494,7 +494,47 @@ fn logs_panel_renders_log_lens_controls() {
     assert!(rendered.contains("ERROR"));
     assert!(rendered.contains("WARN"));
     assert!(rendered.contains("n/p switch container"));
-    assert!(rendered.contains("hugdocker logs web"));
+    assert!(rendered.contains("Tail Logs"));
+    assert!(rendered.contains("Loading logs"));
+}
+
+#[test]
+fn logs_panel_renders_tail_lines_and_errors() {
+    let snapshot = sample_snapshot();
+    let mut state = DashboardState::from_snapshot(snapshot, SortMode::Severity);
+    state.panel = TuiPanel::Logs;
+    state.log_data = Some(LogPanelData::sampled(
+        "web".into(),
+        "web_1".into(),
+        String::new(),
+        vec!["INFO ready\n".into(), "ERROR database failed\n".into()],
+    ));
+
+    let backend = TestBackend::new(120, 36);
+    let mut terminal = Terminal::new(backend).expect("terminal");
+    terminal
+        .draw(|frame| render_dashboard(frame, &mut state))
+        .expect("draw");
+
+    let rendered = format!("{:?}", terminal.backend().buffer());
+
+    assert!(rendered.contains("INFO ready"));
+    assert!(rendered.contains("ERROR database failed"));
+
+    state.log_data = Some(LogPanelData {
+        container_id: "web".into(),
+        container_name: "web_1".into(),
+        filter: String::new(),
+        lines: Vec::new(),
+        loading: false,
+        error: Some("No such container".into()),
+    });
+    terminal
+        .draw(|frame| render_dashboard(frame, &mut state))
+        .expect("draw");
+    let rendered = format!("{:?}", terminal.backend().buffer());
+    assert!(rendered.contains("logs error"));
+    assert!(rendered.contains("No such container"));
 }
 
 #[test]

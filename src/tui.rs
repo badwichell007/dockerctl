@@ -218,8 +218,59 @@ pub struct DashboardState {
     pub execution_prompt: Option<ExecutionPrompt>,
     pub resource_data: Option<ResourcePanelData>,
     pub resource_trend: Option<ResourceTrend>,
+    pub log_data: Option<LogPanelData>,
     pub log_container_index: usize,
     pub exec_container_index: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogPanelData {
+    pub container_id: String,
+    pub container_name: String,
+    pub filter: String,
+    pub lines: Vec<String>,
+    pub loading: bool,
+    pub error: Option<String>,
+}
+
+impl LogPanelData {
+    fn loading(container_id: String, container_name: String, filter: String) -> Self {
+        Self {
+            container_id,
+            container_name,
+            filter,
+            lines: Vec::new(),
+            loading: true,
+            error: None,
+        }
+    }
+
+    pub fn sampled(
+        container_id: String,
+        container_name: String,
+        filter: String,
+        lines: Vec<String>,
+    ) -> Self {
+        Self {
+            container_id,
+            container_name,
+            filter,
+            lines,
+            loading: false,
+            error: None,
+        }
+    }
+
+    fn error(container_id: String, container_name: String, filter: String, error: String) -> Self {
+        Self {
+            container_id,
+            container_name,
+            filter,
+            lines: Vec::new(),
+            loading: false,
+            error: Some(error),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -251,6 +302,7 @@ impl DashboardState {
             execution_prompt: None,
             resource_data: None,
             resource_trend: None,
+            log_data: None,
             log_container_index: 0,
             exec_container_index: None,
         };
@@ -500,6 +552,9 @@ struct TuiApp {
     resource_refresh_interval: Duration,
     last_refresh: Instant,
     last_resource_refresh: Option<Instant>,
+    log_data: Option<LogPanelData>,
+    log_task: Option<JoinHandle<LogPanelData>>,
+    log_refresh_key: Option<(String, String)>,
     log_container_index: usize,
     exec_container_index: Option<usize>,
 }
@@ -530,6 +585,9 @@ impl TuiApp {
             resource_refresh_interval,
             last_refresh: Instant::now(),
             last_resource_refresh: None,
+            log_data: None,
+            log_task: None,
+            log_refresh_key: None,
             log_container_index: 0,
             exec_container_index: None,
         };
@@ -542,6 +600,8 @@ impl TuiApp {
         loop {
             dirty |= self.poll_resource_task();
             dirty |= self.ensure_resource_sampling();
+            dirty |= self.poll_log_task();
+            dirty |= self.ensure_log_sampling();
 
             if self.last_refresh.elapsed() >= Duration::from_secs(2) {
                 self.refresh().await?;
@@ -610,6 +670,7 @@ impl TuiApp {
                 self.resource_previous.as_ref(),
                 self.resource_data.as_ref(),
             ),
+            log_data: self.log_data.clone(),
             log_container_index: self.log_container_index,
             exec_container_index: self.exec_container_index,
         };
@@ -621,6 +682,7 @@ impl TuiApp {
         self.context_menu = state.context_menu;
         self.execution_prompt = state.execution_prompt;
         self.resource_data = state.resource_data;
+        self.log_data = state.log_data;
         self.log_container_index = state.log_container_index;
         self.exec_container_index = state.exec_container_index;
         self.list_state.select(state.table_state.selected());
@@ -690,6 +752,7 @@ impl TuiApp {
                 self.context_menu = None;
                 self.filter.pop();
                 self.rebuild_filtered();
+                self.log_refresh_key = None;
             }
             KeyCode::Enter => {
                 let mut state = self.dashboard_state();
@@ -768,6 +831,7 @@ impl TuiApp {
                 self.context_menu = None;
                 self.filter.push(ch);
                 self.rebuild_filtered();
+                self.log_refresh_key = None;
             }
             _ => {}
         }
@@ -913,6 +977,10 @@ impl TuiApp {
             });
             self.last_resource_refresh = None;
         }
+        if self.panel == TuiPanel::Logs {
+            self.log_data = None;
+            self.log_refresh_key = None;
+        }
         Ok(())
     }
     fn rebuild_filtered(&mut self) {
@@ -1000,6 +1068,14 @@ impl TuiApp {
         active.get(index).copied()
     }
 
+    fn current_log_container(&self) -> Option<&crate::domain::Container> {
+        let project = self.current_project()?;
+        let index = self
+            .log_container_index
+            .min(project.containers.len().saturating_sub(1));
+        project.containers.get(index)
+    }
+
     fn open_exec_picker(&mut self) {
         let mut state = self.dashboard_state();
         open_exec_picker(&mut state);
@@ -1050,6 +1126,8 @@ impl TuiApp {
             self.log_container_index + 1,
             len
         );
+        self.log_data = None;
+        self.log_refresh_key = None;
     }
 
     fn dashboard_state(&self) -> DashboardState {
@@ -1071,6 +1149,7 @@ impl TuiApp {
                 self.resource_previous.as_ref(),
                 self.resource_data.as_ref(),
             ),
+            log_data: self.log_data.clone(),
             log_container_index: self.log_container_index,
             exec_container_index: self.exec_container_index,
         };
@@ -1124,6 +1203,75 @@ impl TuiApp {
             }
             None => {}
         }
+        true
+    }
+
+    fn poll_log_task(&mut self) -> bool {
+        let Some(task) = self.log_task.as_mut() else {
+            return false;
+        };
+        if !task.is_finished() {
+            return false;
+        }
+        let task = self.log_task.take().expect("finished log task");
+        if let Some(Ok(data)) = task.now_or_never() {
+            self.log_refresh_key = Some((data.container_id.clone(), data.filter.clone()));
+            self.log_data = Some(data);
+        }
+        true
+    }
+
+    fn ensure_log_sampling(&mut self) -> bool {
+        if self.panel != TuiPanel::Logs {
+            if let Some(task) = self.log_task.take() {
+                task.abort();
+                return true;
+            }
+            return false;
+        }
+        if self.log_task.is_some() {
+            return false;
+        }
+        let Some(container) = self.current_log_container().cloned() else {
+            let changed = self.log_data.is_some();
+            self.log_data = None;
+            self.log_refresh_key = None;
+            return changed;
+        };
+        let filter = self.filter.clone();
+        let key = (container.id.clone(), filter.clone());
+        if self.log_refresh_key.as_ref() == Some(&key) {
+            return false;
+        }
+        self.log_data = Some(LogPanelData::loading(
+            container.id.clone(),
+            container.name.clone(),
+            filter.clone(),
+        ));
+        let Some(client) = self.client.clone() else {
+            self.log_data = Some(LogPanelData::error(
+                container.id,
+                container.name,
+                filter,
+                "Docker client is not available".to_string(),
+            ));
+            return true;
+        };
+        self.log_task = Some(tokio::spawn(async move {
+            match client
+                .container_logs(
+                    &container.id,
+                    client.config().tui.log_tail,
+                    (!filter.is_empty()).then_some(filter.as_str()),
+                )
+                .await
+            {
+                Ok(lines) => LogPanelData::sampled(container.id, container.name, filter, lines),
+                Err(error) => {
+                    LogPanelData::error(container.id, container.name, filter, error.to_string())
+                }
+            }
+        }));
         true
     }
 
@@ -1886,6 +2034,11 @@ fn render_logs_panel(
         chunks[0],
     );
 
+    let body = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(7), Constraint::Min(4)])
+        .split(chunks[1]);
+
     let rows = project
         .containers
         .iter()
@@ -1942,11 +2095,13 @@ fn render_logs_panel(
             .border_style(Style::default().fg(palette.primary))
             .style(Style::default().bg(palette.surface)),
     );
-    frame.render_widget(table, chunks[1]);
+    frame.render_widget(table, body[0]);
+
+    render_log_lines(frame, body[1], state, selected_container, palette);
 
     frame.render_widget(
         Paragraph::new(format!(
-            "hugdocker logs {target} --tail 200 | filter: {filter} | highlights: error warn panic"
+            "live tail: hugdocker logs {target} --tail 200 | filter: {filter} | n/p switch | r refresh"
         ))
         .alignment(Alignment::Center)
         .style(Style::default().fg(palette.muted).bg(palette.surface))
@@ -1960,6 +2115,83 @@ fn render_logs_panel(
         ),
         chunks[2],
     );
+}
+
+fn render_log_lines(
+    frame: &mut ratatui::Frame,
+    area: ratatui::layout::Rect,
+    state: &DashboardState,
+    selected_container: Option<&crate::domain::Container>,
+    palette: ThemePalette,
+) {
+    let title = selected_container
+        .map(|container| format!("Tail Logs / {}", container.name))
+        .unwrap_or_else(|| "Tail Logs".to_string());
+    let lines = match (selected_container, state.log_data.as_ref()) {
+        (None, _) => vec![Line::from(Span::styled(
+            "No container in current project.",
+            Style::default().fg(palette.muted),
+        ))],
+        (Some(container), Some(data)) if data.container_id == container.id && data.loading => {
+            vec![Line::from(Span::styled(
+                "Loading logs...",
+                Style::default().fg(palette.warning),
+            ))]
+        }
+        (Some(container), Some(data)) if data.container_id == container.id => {
+            if let Some(error) = data.error.as_ref() {
+                vec![Line::from(Span::styled(
+                    format!("logs error: {error}"),
+                    Style::default().fg(palette.danger),
+                ))]
+            } else if data.lines.is_empty() {
+                vec![Line::from(Span::styled(
+                    "No log lines matched current filter.",
+                    Style::default().fg(palette.muted),
+                ))]
+            } else {
+                data.lines
+                    .iter()
+                    .flat_map(|line| log_line_spans(line, palette))
+                    .collect()
+            }
+        }
+        _ => vec![Line::from(Span::styled(
+            "Loading logs...",
+            Style::default().fg(palette.warning),
+        ))],
+    };
+    frame.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .style(Style::default().fg(Color::White).bg(palette.surface))
+            .block(
+                Block::default()
+                    .title(title)
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(palette.primary))
+                    .style(Style::default().bg(palette.surface)),
+            ),
+        area,
+    );
+}
+
+fn log_line_spans(line: &str, palette: ThemePalette) -> Vec<Line<'static>> {
+    line.lines()
+        .map(|part| {
+            let lower = part.to_ascii_lowercase();
+            let color =
+                if lower.contains("error") || lower.contains("fatal") || lower.contains("panic") {
+                    palette.danger
+                } else if lower.contains("warn") {
+                    palette.warning
+                } else {
+                    Color::White
+                };
+            Line::from(Span::styled(part.to_string(), Style::default().fg(color)))
+        })
+        .collect()
 }
 
 fn log_filter_label(state: &DashboardState) -> String {
