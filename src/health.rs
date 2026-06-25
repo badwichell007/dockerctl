@@ -141,6 +141,7 @@ pub fn global_findings(snapshot: &DockerSnapshot) -> Vec<String> {
 pub fn project_fingerprints(snapshot: &DockerSnapshot) -> Vec<ProjectFingerprint> {
     let health = analyze_snapshot(snapshot);
     let port_conflicts = project_port_conflicts(snapshot);
+    let shared_volumes = project_shared_volumes(snapshot);
     let mut fingerprints = snapshot
         .projects
         .iter()
@@ -164,9 +165,22 @@ pub fn project_fingerprints(snapshot: &DockerSnapshot) -> Vec<ProjectFingerprint
             if project.images.len() >= 5 {
                 signals.push("image_bloat".to_string());
             }
+            let stale_stopped = project
+                .containers
+                .iter()
+                .filter(|container| looks_stale_stopped(container.state, &container.status))
+                .count();
+            if stale_stopped > 0 {
+                signals.push(format!("stale_stopped:{stale_stopped}"));
+            }
             if let Some(ports) = port_conflicts.get(&project.name) {
                 for port in ports {
                     signals.push(format!("port_conflict:{port}"));
+                }
+            }
+            if let Some(volumes) = shared_volumes.get(&project.name) {
+                for volume in volumes {
+                    signals.push(format!("shared_volume:{volume}"));
                 }
             }
             signals.sort();
@@ -217,12 +231,34 @@ fn project_risk_score(project: &crate::domain::Project, signals: &[String]) -> u
         .filter(|signal| signal.starts_with("port_conflict:"))
         .count() as u16
         * 15;
+    score += signals
+        .iter()
+        .filter(|signal| signal.starts_with("shared_volume:"))
+        .count() as u16
+        * 12;
+    score += signals
+        .iter()
+        .filter(|signal| signal.starts_with("stale_stopped:"))
+        .count() as u16
+        * 10;
     score.min(100)
 }
 
 fn suggested_command(project: &crate::domain::Project, signals: &[String]) -> String {
     if project.unhealthy > 0 || project.restarting > 0 {
         return format!("hugdocker rescue {} --dry-run", project.name);
+    }
+    if signals
+        .iter()
+        .any(|signal| signal.starts_with("stale_stopped:"))
+    {
+        return "hugdocker safe-prune --dry-run".to_string();
+    }
+    if signals
+        .iter()
+        .any(|signal| signal.starts_with("shared_volume:"))
+    {
+        return format!("hugdocker inspect {}", project.name);
     }
     if signals.iter().any(|signal| signal == "inactive") {
         return format!("hugdocker plan remove {}", project.name);
@@ -251,6 +287,22 @@ fn host_port_key(port: &str) -> Option<String> {
     Some(host.rsplit(':').next().unwrap_or(host).to_string())
 }
 
+fn looks_stale_stopped(state: ContainerState, status: &str) -> bool {
+    if !matches!(
+        state,
+        ContainerState::Exited
+            | ContainerState::Created
+            | ContainerState::Dead
+            | ContainerState::Unknown
+    ) {
+        return false;
+    }
+    let status = status.to_ascii_lowercase();
+    [" day", " week", " month", " year"]
+        .iter()
+        .any(|needle| status.contains(needle))
+}
+
 fn project_port_conflicts(snapshot: &DockerSnapshot) -> BTreeMap<String, Vec<String>> {
     let mut by_port: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for project in &snapshot.projects {
@@ -271,6 +323,29 @@ fn project_port_conflicts(snapshot: &DockerSnapshot) -> BTreeMap<String, Vec<Str
         }
         for project in projects {
             by_project.entry(project).or_default().push(port.clone());
+        }
+    }
+    by_project
+}
+
+fn project_shared_volumes(snapshot: &DockerSnapshot) -> BTreeMap<String, Vec<String>> {
+    let mut by_volume: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for project in &snapshot.projects {
+        for volume in &project.volumes {
+            by_volume
+                .entry(volume.clone())
+                .or_default()
+                .insert(project.name.clone());
+        }
+    }
+
+    let mut by_project: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (volume, projects) in by_volume {
+        if projects.len() <= 1 {
+            continue;
+        }
+        for project in projects {
+            by_project.entry(project).or_default().push(volume.clone());
         }
     }
     by_project

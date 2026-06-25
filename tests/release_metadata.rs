@@ -1,10 +1,10 @@
 use std::fs;
 
 #[test]
-fn release_metadata_targets_public_v041_repository() {
+fn release_metadata_targets_public_v042_repository() {
     let manifest = fs::read_to_string("Cargo.toml").expect("Cargo.toml");
     assert!(manifest.contains("name = \"hugdocker\""));
-    assert!(manifest.contains("version = \"0.4.1\""));
+    assert!(manifest.contains("version = \"0.4.2\""));
     assert!(manifest.contains("repository = \"https://github.com/badwichell007/dockerctl\""));
     assert!(manifest.contains("homepage = \"https://github.com/badwichell007/dockerctl\""));
     assert!(
@@ -14,9 +14,9 @@ fn release_metadata_targets_public_v041_repository() {
 
     let readme = fs::read_to_string("README.md").expect("README.md");
     assert!(readme.contains("badwichell007/dockerctl"));
-    assert!(readme.contains("HUGDOCKER_VERSION=v0.4.1"));
+    assert!(readme.contains("HUGDOCKER_VERSION=v0.4.2"));
     assert!(readme.contains("hugdocker inbox --json"));
-    assert!(readme.contains("### v0.4.1"));
+    assert!(readme.contains("### v0.4.2"));
     assert!(readme.contains("Ops Inbox"));
     assert!(readme.contains("Ops Fingerprint"));
 
@@ -29,9 +29,9 @@ fn release_metadata_targets_public_v041_repository() {
     assert!(config.contains("theme = \"cockpit\""));
 
     let release_notes =
-        fs::read_to_string(".github/release-notes/v0.4.1.md").expect("release notes");
-    assert!(release_notes.contains("Port Conflict Fingerprints"));
-    assert!(release_notes.contains("port_conflict:<port>"));
+        fs::read_to_string(".github/release-notes/v0.4.2.md").expect("release notes");
+    assert!(release_notes.contains("stale_stopped:<n>"));
+    assert!(release_notes.contains("shared_volume:<name>"));
 }
 
 #[test]

@@ -29,8 +29,21 @@ fn doctor_reports_ports_public_bind_restart_loop_and_anonymous_volume() {
                 stack_namespace: None,
                 labels: Default::default(),
                 networks: vec!["api_default".into()],
-                volumes: vec![],
+                volumes: vec!["shared_data".into()],
                 ports: vec!["127.0.0.1:8080->80/tcp".into()],
+            },
+            Container {
+                id: "api-old".into(),
+                name: "api_old_1".into(),
+                image: "example/api:old".into(),
+                state: ContainerState::Exited,
+                status: "Exited (0) 3 days ago".into(),
+                compose_project: Some("api".into()),
+                stack_namespace: None,
+                labels: Default::default(),
+                networks: vec!["api_default".into()],
+                volumes: vec![],
+                ports: vec![],
             },
             Container {
                 id: "fat".into(),
@@ -42,7 +55,7 @@ fn doctor_reports_ports_public_bind_restart_loop_and_anonymous_volume() {
                 stack_namespace: None,
                 labels: Default::default(),
                 networks: vec!["fat_default".into()],
-                volumes: vec![],
+                volumes: vec!["shared_data".into()],
                 ports: vec![],
             },
             Container {
@@ -106,6 +119,7 @@ fn doctor_reports_ports_public_bind_restart_loop_and_anonymous_volume() {
         ],
         vec![
             "0123456789abcdef0123456789abcdef".into(),
+            "shared_data".into(),
             "orphan_volume".into(),
         ],
         vec![
@@ -168,7 +182,29 @@ fn doctor_reports_ports_public_bind_restart_loop_and_anonymous_volume() {
             .iter()
             .any(|signal| signal == "port_conflict:8080")
     );
+    assert!(
+        api_fingerprint
+            .signals
+            .iter()
+            .any(|signal| signal == "stale_stopped:1")
+    );
+    assert!(
+        api_fingerprint
+            .signals
+            .iter()
+            .any(|signal| signal == "shared_volume:shared_data")
+    );
     assert!(api_fingerprint.risk_score >= 15);
+    let fat_fingerprint = fingerprints
+        .iter()
+        .find(|fingerprint| fingerprint.project == "fat")
+        .expect("fat fingerprint");
+    assert!(
+        fat_fingerprint
+            .signals
+            .iter()
+            .any(|signal| signal == "shared_volume:shared_data")
+    );
 }
 
 #[test]
